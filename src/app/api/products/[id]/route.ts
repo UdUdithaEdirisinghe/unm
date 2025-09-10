@@ -1,100 +1,148 @@
 // src/app/api/products/[id]/route.ts
 import { NextResponse } from "next/server";
-import { readProducts, writeProducts, type Product } from "../../../../lib/products";
+import { sql } from "../../../../lib/db"; // <-- uses your Neon helper
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
-/* ---------------- PUT /api/products/[id] ---------------- */
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+/* -------------------- GET /api/products/:id -------------------- */
+export async function GET(
+  _req: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    // Read as 'any' so we can accept string/number/null for salePrice etc.
-    const raw: any = await req.json();
-    const products = await readProducts();
-    const i = products.findIndex((p) => p.id === params.id);
-    if (i < 0) return j({ error: "Not found" }, 404);
+    const rows = await sql/*sql*/`
+      select id, name, slug, image, price, sale_price, short_desc, brand, specs, stock
+      from products
+      where id = ${params.id}
+      limit 1
+    `;
+    if (rows.length === 0) return j({ error: "Not found" }, 404);
 
-    const prev = products[i];
+    const r = rows[0] as any;
+    return j({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      image: r.image,
+      price: Number(r.price),
+      salePrice: r.sale_price ?? undefined,
+      shortDesc: r.short_desc ?? "",
+      brand: r.brand ?? "",
+      specs: r.specs ?? undefined, // JSONB
+      stock: Number(r.stock ?? 0),
+    });
+  } catch (e: any) {
+    return j({ error: e?.message || "Failed to load product." }, 500);
+  }
+}
 
-    // ----- validate unique slug if provided -----
-    const newSlug =
-      typeof raw.slug === "string" ? raw.slug.toString().trim() : undefined;
-    if (newSlug) {
-      const dup = products.some((p) => p.slug === newSlug && p.id !== params.id);
-      if (dup) return j({ error: "Slug already exists." }, 409);
+/* -------------------- PUT /api/products/:id -------------------- */
+/* Updates only provided fields; others remain unchanged.
+   To CLEAR the sale price, send { "salePrice": "" } or null. */
+export async function PUT(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const body = await req.json();
+
+    const name = (body.name ?? "").toString().trim();
+    const slug = (body.slug ?? "").toString().trim();
+
+    // normalize image if provided
+    const imageRaw = (body.image ?? "").toString().trim();
+    const image =
+      imageRaw && (imageRaw.startsWith("/") || /^https?:\/\//i.test(imageRaw))
+        ? imageRaw
+        : imageRaw
+        ? `/${imageRaw}`
+        : "";
+
+    const price = body.price != null ? Number(body.price) : undefined;
+    const stock = body.stock != null ? Number(body.stock) : undefined;
+
+    // sale price: support “clear to NULL”
+    const saleProvided = body.salePrice !== undefined;
+    const clearSale = body.salePrice === "" || body.salePrice === null;
+    const salePrice =
+      saleProvided && !clearSale ? Number(body.salePrice) : undefined;
+
+    // slug uniqueness (excluding this product)
+    if (slug) {
+      const dup = await sql/*sql*/`
+        select 1 from products where slug = ${slug} and id <> ${params.id} limit 1
+      `;
+      if (dup.length) return j({ error: "Slug already exists." }, 409);
     }
 
-    // ----- normalize image -----
-    const nextImage = (() => {
-      const val =
-        typeof raw.image === "string" ? raw.image.trim() : prev.image ?? "";
-      if (!val) return prev.image;
-      return val.startsWith("/") || /^https?:\/\//i.test(val) ? val : `/${val}`;
-    })();
+    // Build nullable values for COALESCE (undefined → NULL means “don’t change”)
+    const nameV = name || null;
+    const slugV = slug || null;
+    const imageV = image || null;
+    const priceV = Number.isFinite(price as number) ? price : null;
+    const shortV =
+      body.shortDesc !== undefined ? String(body.shortDesc ?? "") : null;
+    const brandV = body.brand !== undefined ? String(body.brand ?? "") : null;
+    const specsV = body.specs !== undefined ? body.specs : null; // JSONB
+    const stockV = Number.isFinite(stock as number) ? stock : null;
 
-    // ----- numbers -----
-    const nextPrice =
-      raw.price != null && Number.isFinite(Number(raw.price))
-        ? Number(raw.price)
-        : prev.price;
+    await sql/*sql*/`
+      update products
+      set
+        name       = COALESCE(${nameV}, name),
+        slug       = COALESCE(${slugV}, slug),
+        image      = COALESCE(${imageV}, image),
+        price      = COALESCE(${priceV}::int, price),
+        -- sale_price: if caller explicitly asked to clear, set NULL; else apply COALESCE
+        sale_price = CASE
+                       WHEN ${saleProvided} AND ${clearSale} THEN NULL
+                       ELSE COALESCE(${salePrice ?? null}::int, sale_price)
+                     END,
+        short_desc = COALESCE(${shortV}, short_desc),
+        brand      = COALESCE(${brandV}, brand),
+        specs      = COALESCE(${specsV}::jsonb, specs),
+        stock      = COALESCE(${stockV}::int, stock),
+        updated_at = now()
+      where id = ${params.id}
+    `;
 
-    const nextStock =
-      raw.stock != null && Number.isFinite(Number(raw.stock))
-        ? Number(raw.stock)
-        : prev.stock;
+    // return the updated row
+    const out = await sql/*sql*/`
+      select id, name, slug, image, price, sale_price, short_desc, brand, specs, stock
+      from products
+      where id = ${params.id}
+      limit 1
+    `;
+    if (out.length === 0) return j({ error: "Not found" }, 404);
 
-    // ----- salePrice (allow clearing with "" or null) -----
-    let nextSale: number | undefined = prev.salePrice;
-    if ("salePrice" in raw) {
-      const v = raw.salePrice; // any
-      if (v === null || v === "") {
-        nextSale = undefined; // clear discount
-      } else if (Number.isFinite(Number(v))) {
-        nextSale = Number(v);
-      } // else keep previous if invalid
-    }
-
-    // ----- specs (accept object only) -----
-    const nextSpecs =
-      raw.specs && typeof raw.specs === "object" && !Array.isArray(raw.specs)
-        ? (raw.specs as Product["specs"])
-        : raw.specs === undefined
-        ? prev.specs
-        : prev.specs;
-
-    const next: Product = {
-      ...prev,
-      name:
-        typeof raw.name === "string" ? raw.name.toString().trim() : prev.name,
-      slug: newSlug ?? prev.slug,
-      image: nextImage,
-      brand:
-        typeof raw.brand === "string" ? raw.brand.toString().trim() : prev.brand,
-      shortDesc:
-        typeof raw.shortDesc === "string"
-          ? raw.shortDesc.toString().trim()
-          : prev.shortDesc,
-      specs: nextSpecs,
-      price: nextPrice,
-      stock: nextStock,
-      salePrice: nextSale,
-    };
-
-    products[i] = next;
-    await writeProducts(products);
-    return j(next);
+    const r = out[0] as any;
+    return j({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      image: r.image,
+      price: Number(r.price),
+      salePrice: r.sale_price ?? undefined,
+      shortDesc: r.short_desc ?? "",
+      brand: r.brand ?? "",
+      specs: r.specs ?? undefined,
+      stock: Number(r.stock ?? 0),
+    });
   } catch (e: any) {
     return j({ error: e?.message || "Update failed." }, 500);
   }
 }
 
-/* ---------------- DELETE /api/products/[id] ---------------- */
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+/* -------------------- DELETE /api/products/:id -------------------- */
+export async function DELETE(
+  _req: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    const products = await readProducts();
-    const before = products.length;
-    const next = products.filter((p) => p.id !== params.id);
-    if (next.length === before) return j({ error: "Not found" }, 404);
-    await writeProducts(next);
+    const res = await sql/*sql*/`
+      delete from products where id = ${params.id} returning id
+    `;
+    if (res.length === 0) return j({ error: "Not found" }, 404);
     return j({ ok: true });
   } catch (e: any) {
     return j({ error: e?.message || "Delete failed." }, 500);
