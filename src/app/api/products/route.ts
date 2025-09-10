@@ -7,24 +7,14 @@ const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 /* GET /api/products */
 export async function GET() {
   try {
-    const rows = (await sql`
-      SELECT
-        id,
-        slug,
-        name,
-        image,
-        price,
-        sale_price,
-        short_desc,
-        brand,
-        specs,
-        stock
-      FROM products
-      ORDER BY created_at DESC
-    `) as any[];
+    const rows = await sql`
+      select id, name, slug, image, price, sale_price, short_desc, brand, specs, stock
+      from products
+      order by created_at desc
+    `;
 
-    // map DB → API
-    const data = rows.map((r) => ({
+    // DB -> API shape
+    const products = rows.map((r: any) => ({
       id: r.id,
       name: r.name,
       slug: r.slug,
@@ -37,7 +27,7 @@ export async function GET() {
       stock: Number(r.stock ?? 0),
     }));
 
-    return j(data);
+    return j(products);
   } catch (e: any) {
     return j({ error: e?.message || "Failed to load products." }, 500);
   }
@@ -47,52 +37,46 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const name = String(body.name ?? "").trim();
-    const slug = String(body.slug ?? "").trim();
-    const imageRaw = String(body.image ?? "").trim();
+
+    const name = String(body.name || "").trim();
+    const slug = String(body.slug || "").trim();
+    let image = String(body.image || "").trim();
     const price = Number(body.price);
     const salePrice =
-      body.salePrice === "" || body.salePrice == null
-        ? null
-        : Number(body.salePrice);
+      body.salePrice === "" || body.salePrice == null ? null : Number(body.salePrice);
     const stock = Number(body.stock ?? 0);
     const shortDesc = String(body.shortDesc ?? "");
     const brand = String(body.brand ?? "");
-    const specs = body.specs ?? null; // JSON
+    const specs = body.specs ?? null;
 
-    if (!name || !slug || !imageRaw || !Number.isFinite(price)) {
-      return j({ error: "Missing name, slug, image or price." }, 400);
+    if (!name || !slug || !image || !Number.isFinite(price)) {
+      return j({ error: "Missing required fields: name, slug, image, price." }, 400);
     }
+    if (!image.startsWith("/") && !/^https?:\/\//i.test(image)) image = `/${image}`;
 
-    // normalize image path
-    const image =
-      imageRaw.startsWith("/") || /^https?:\/\//i.test(imageRaw)
-        ? imageRaw
-        : `/${imageRaw}`;
-
-    // prevent slug duplicates
-    const dup = (await sql`SELECT 1 FROM products WHERE slug = ${slug} LIMIT 1`) as any[];
+    // unique slug?
+    const dup = await sql`select 1 from products where slug = ${slug} limit 1`;
     if (dup.length) return j({ error: "Slug already exists." }, 409);
 
-    const inserted = (await sql`
-      INSERT INTO products (slug, name, image, price, sale_price, short_desc, brand, specs, stock)
-      VALUES (${slug}, ${name}, ${image}, ${price}, ${salePrice}, ${shortDesc}, ${brand}, ${specs}, ${stock})
-      RETURNING id, slug, name, image, price, sale_price, short_desc, brand, specs, stock
-    `) as any[];
+    const inserted = await sql`
+      insert into products (name, slug, image, price, sale_price, short_desc, brand, specs, stock)
+      values (${name}, ${slug}, ${image}, ${price}, ${salePrice}, ${shortDesc}, ${brand}, ${specs}, ${stock})
+      returning id, name, slug, image, price, sale_price, short_desc, brand, specs, stock
+    `;
 
-    const p = inserted[0];
+    const r: any = inserted[0];
     return j(
       {
-        id: p.id,
-        slug: p.slug,
-        name: p.name,
-        image: p.image,
-        price: Number(p.price),
-        salePrice: p.sale_price ?? undefined,
-        shortDesc: p.short_desc ?? "",
-        brand: p.brand ?? "",
-        specs: p.specs ?? undefined,
-        stock: Number(p.stock ?? 0),
+        id: r.id,
+        name: r.name,
+        slug: r.slug,
+        image: r.image,
+        price: Number(r.price),
+        salePrice: r.sale_price ?? undefined,
+        shortDesc: r.short_desc ?? "",
+        brand: r.brand ?? "",
+        specs: r.specs ?? undefined,
+        stock: Number(r.stock ?? 0),
       },
       201
     );

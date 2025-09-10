@@ -4,48 +4,60 @@ import { sql } from "../../../lib/db";
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
-/* GET /api/orders?status=... */
+/* GET /api/orders */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const status = url.searchParams.get("status");
 
-  const rows = (await sql`
-    SELECT *
-    FROM orders
-    ${status ? sql`WHERE status = ${status}` : sql``}
-    ORDER BY created_at DESC
-  `) as any[];
+  const rows = await sql`
+    select id, created_at, status, customer, payment_method, bank_slip_name, bank_slip_url,
+           subtotal, shipping, promo_code, promo_discount, free_shipping, total
+    from orders
+    ${status ? sql`where status = ${status}` : sql``}
+    order by created_at desc
+  `;
 
-  return j(rows);
+  // Minimal payload (items are in order_items table; fetch separately in details page)
+  const orders = rows.map((r: any) => ({
+    id: r.id,
+    createdAt: r.created_at,
+    status: r.status,
+    customer: r.customer,
+    paymentMethod: r.payment_method,
+    bankSlipName: r.bank_slip_name ?? undefined,
+    bankSlipUrl: r.bank_slip_url ?? undefined,
+    subtotal: Number(r.subtotal),
+    shipping: Number(r.shipping),
+    promoCode: r.promo_code ?? undefined,
+    promoDiscount: r.promo_discount ?? undefined,
+    freeShipping: !!r.free_shipping,
+    total: Number(r.total),
+  }));
+
+  return j(orders);
 }
 
-/* POST /api/orders */
+/* POST /api/orders  — validates stock, deducts, saves order + items */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+
     const items = Array.isArray(body.items) ? body.items : [];
     if (!items.length) return j({ error: "Empty cart." }, 400);
 
-    // 1) check availability
-    const ids = items.map((it: any) => String(it.id));
-    const dbProducts = (await sql`
-      SELECT id, name, stock FROM products WHERE id IN (${sql(ids)})
-    `) as any[];
-
-    const byId = new Map(dbProducts.map((p) => [String(p.id), p]));
-    const shortages: { id: string; name: string; requested: number; available: number }[] = [];
+    // --- check stock first (no generics / no custom placeholders) ---
+    const shortages: any[] = [];
     for (const it of items) {
       const id = String(it.id);
       const qty = Math.max(1, Number(it.quantity || 1));
-      const p = byId.get(id);
-      const available = Number(p?.stock ?? 0);
-      if (!p || qty > available) {
-        shortages.push({
-          id,
-          name: p?.name ?? String(it.name ?? "Unknown"),
-          requested: qty,
-          available,
-        });
+      const row = await sql`select name, stock from products where id = ${id} limit 1`;
+      if (!row.length) {
+        shortages.push({ id, name: String(it.name || "Unknown"), requested: qty, available: 0 });
+        continue;
+      }
+      const available = Number(row[0].stock ?? 0);
+      if (qty > available) {
+        shortages.push({ id, name: row[0].name, requested: qty, available });
       }
     }
     if (shortages.length) {
@@ -59,80 +71,50 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) totals
+    // --- totals (use values from client for now) ---
     const subtotal = items.reduce(
-      (s: number, it: any) =>
-        s + Number(it.price || 0) * Math.max(1, Number(it.quantity || 1)),
+      (sum: number, it: any) => sum + Number(it.price || 0) * Math.max(1, Number(it.quantity || 1)),
       0
     );
-
-    // Optional: promo lookups from your promos table if you add one later
     const discount = Number(body.promoDiscount || 0);
     const freeShipping = !!body.freeShipping;
     const shipping = freeShipping ? 0 : Number(body.shipping ?? 350);
     const total = Math.max(0, subtotal - discount) + shipping;
 
-    // 3) transaction (no .begin — manual BEGIN/COMMIT)
-    await sql`BEGIN`;
-    try {
-      // insert order
-      const insertedOrder = (await sql`
-        INSERT INTO orders (
-          created_at, status,
-          customer_first_name, customer_last_name, customer_email,
-          customer_address, customer_city, customer_postal, customer_phone, customer_notes,
-          ship_name, ship_phone, ship_address, ship_city, ship_postal,
-          payment_method, bank_slip_name, bank_slip_url,
-          subtotal, shipping, promo_code, promo_discount, free_shipping, total
-        )
-        VALUES (
-          NOW(), 'pending',
-          ${body.customer?.firstName ?? ""}, ${body.customer?.lastName ?? ""}, ${body.customer?.email ?? ""},
-          ${body.customer?.address ?? ""}, ${body.customer?.city ?? ""}, ${body.customer?.postal ?? ""},
-          ${body.customer?.phone ?? ""}, ${body.customer?.notes ?? ""},
-          ${
-            body.shipDifferent
-              ? `${body.shippingAddress?.firstName ?? ""} ${body.shippingAddress?.lastName ?? ""}`.trim()
-              : null
-          },
-          ${body.shipDifferent ? body.shippingAddress?.phone ?? "" : null},
-          ${body.shipDifferent ? body.shippingAddress?.address ?? "" : null},
-          ${body.shipDifferent ? body.shippingAddress?.city ?? "" : null},
-          ${body.shipDifferent ? body.shippingAddress?.postal ?? "" : null},
-          ${body.paymentMethod === "BANK" ? "BANK" : "COD"},
-          ${null}, ${body.bankSlipUrl ?? null},
-          ${subtotal}, ${shipping}, ${body.promoCode ?? null}, ${discount || null}, ${freeShipping}, ${total}
-        )
-        RETURNING id
-      `) as any[];
-      const orderId = insertedOrder[0].id as string;
+    // --- create order ---
+    const inserted = await sql`
+      insert into orders
+        (status, customer, payment_method, bank_slip_name, bank_slip_url,
+         subtotal, shipping, promo_code, promo_discount, free_shipping, total)
+      values
+        ('pending', ${body.customer ?? {}}, ${body.paymentMethod === 'BANK' ? 'BANK' : 'COD'},
+         ${body.bankSlipName ?? null}, ${body.bankSlipUrl ?? null},
+         ${subtotal}, ${shipping}, ${body.promoCode ?? null}, ${discount || null},
+         ${freeShipping}, ${total})
+      returning id, created_at
+    `;
+    const orderId = inserted[0].id;
 
-      // insert items + deduct stock
-      for (const it of items) {
-        const pid = String(it.id);
-        const qty = Math.max(1, Number(it.quantity || 1));
-        const price = Number(it.price || 0);
-        const name = String(it.name || "");
-        const slug = String(it.slug || "");
+    // --- insert items + deduct stock ---
+    for (const it of items) {
+      const id = String(it.id);
+      const name = String(it.name);
+      const slug = String(it.slug ?? "");
+      const price = Number(it.price || 0);
+      const qty = Math.max(1, Number(it.quantity || 1));
 
-        await sql`
-          INSERT INTO order_items (order_id, product_id, name, slug, price, quantity)
-          VALUES (${orderId}, ${pid}, ${name}, ${slug}, ${price}, ${qty})
-        `;
+      await sql`
+        insert into order_items (order_id, product_id, slug, name, price, quantity)
+        values (${orderId}, ${id}, ${slug}, ${name}, ${price}, ${qty})
+      `;
 
-        await sql`
-          UPDATE products
-          SET stock = GREATEST(0, stock - ${qty})
-          WHERE id = ${pid}
-        `;
-      }
-
-      await sql`COMMIT`;
-      return j({ ok: true, orderId }, 201);
-    } catch (err) {
-      await sql`ROLLBACK`;
-      throw err;
+      await sql`
+        update products set stock = stock - ${qty}
+        where id = ${id}
+      `;
     }
+
+    return j({ ok: true, orderId }, 201);
   } catch (e: any) {
     return j({ error: e?.message || "Failed to create order." }, 500);
   }
