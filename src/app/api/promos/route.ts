@@ -1,42 +1,50 @@
-// src/app/api/promos/route.ts
 import { NextResponse } from "next/server";
-import { readPromos, writePromos, type Promo } from "../../../lib/promos";
+import { sql } from "../../../lib/db";
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
+/* GET /api/promos */
 export async function GET() {
-  const list = await readPromos();
-  return j(list);
+  try {
+    const rows = (await sql`
+      select code, type, value, enabled, starts_at, ends_at
+      from promos order by code asc
+    `) as any[];
+    return j(rows);
+  } catch (e: any) {
+    return j({ error: e?.message || "Failed to load promos." }, 500);
+  }
 }
 
+/* POST /api/promos */
 export async function POST(req: Request) {
-  const body = (await req.json()) as Partial<Promo>;
-  const code = (body.code ?? "").toString().trim().toUpperCase();
-  const type = body.type;
-  const value = body.value;
+  try {
+    const b = await req.json();
+    const code = String(b.code ?? "").trim().toUpperCase();
+    const type = String(b.type ?? "");
+    const value = b.type === "freeShipping" ? null : Number(b.value ?? 0);
+    const enabled = !!b.enabled;
+    const starts = b.startsAt ? new Date(b.startsAt) : null;
+    const ends = b.endsAt ? new Date(b.endsAt) : null;
 
-  if (!code || !type || !["percent", "fixed", "freeShipping"].includes(type)) {
-    return j({ error: "Invalid promo payload." }, 400);
+    if (!code || !["percent", "fixed", "freeShipping"].includes(type)) {
+      return j({ error: "Invalid promo." }, 400);
+    }
+
+    await sql`
+      insert into promos (code, type, value, enabled, starts_at, ends_at)
+      values (${code}, ${type}, ${value}, ${enabled}, ${starts}, ${ends})
+      on conflict (code) do update set
+        type = excluded.type,
+        value = excluded.value,
+        enabled = excluded.enabled,
+        starts_at = excluded.starts_at,
+        ends_at = excluded.ends_at
+    `;
+
+    const rows = (await sql`select code, type, value, enabled, starts_at, ends_at from promos`) as any[];
+    return j(rows, 201);
+  } catch (e: any) {
+    return j({ error: e?.message || "Failed to save promo." }, 500);
   }
-  if ((type === "percent" || type === "fixed") && !Number.isFinite(Number(value))) {
-    return j({ error: "Value required for this promo type." }, 400);
-  }
-
-  const list = await readPromos();
-  if (list.some(p => p.code === code)) {
-    return j({ error: "Code already exists." }, 409);
-  }
-
-  const toSave: Promo = {
-    code,
-    type: type as Promo["type"],
-    value: type === "freeShipping" ? undefined : Number(value),
-    enabled: body.enabled ?? true,
-    startsAt: body.startsAt,
-    endsAt: body.endsAt,
-  };
-
-  list.push(toSave);
-  await writePromos(list);
-  return j(toSave, 201);
 }

@@ -1,46 +1,48 @@
-// src/app/api/promos/[code]/route.ts
 import { NextResponse } from "next/server";
-import { readPromos, writePromos, type Promo } from "../../../../lib/promos";
+import { sql } from "../../../../lib/db";
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
+/* PUT /api/promos/:code */
 export async function PUT(req: Request, { params }: { params: { code: string } }) {
-  const body = (await req.json()) as Partial<Promo>;
-  const code = params.code.toUpperCase();
+  try {
+    const b = await req.json();
+    const code = params.code.toUpperCase();
+    const type = String(b.type ?? "");
+    const value = b.type === "freeShipping" ? null : Number(b.value ?? 0);
+    const enabled = !!b.enabled;
+    const starts = b.startsAt ? new Date(b.startsAt) : null;
+    const ends = b.endsAt ? new Date(b.endsAt) : null;
 
-  const list = await readPromos();
-  const idx = list.findIndex(p => p.code === code);
-  if (idx < 0) return j({ error: "Not found." }, 404);
+    if (!["percent", "fixed", "freeShipping"].includes(type)) {
+      return j({ error: "Invalid type." }, 400);
+    }
 
-  const curr = list[idx];
-  const next: Promo = {
-    ...curr,
-    type: (body.type ?? curr.type) as Promo["type"],
-    value: body.type === "freeShipping"
-      ? undefined
-      : (body.value != null ? Number(body.value) : curr.value),
-    enabled: body.enabled ?? curr.enabled,
-    startsAt: body.startsAt ?? curr.startsAt,
-    endsAt: body.endsAt ?? curr.endsAt,
-  };
+    const res = (await sql`
+      update promos set
+        type = ${type}, value = ${value}, enabled = ${enabled},
+        starts_at = ${starts}, ends_at = ${ends}
+      where code = ${code}
+      returning code, type, value, enabled, starts_at, ends_at
+    `) as any[];
 
-  // validate
-  if (next.type !== "freeShipping" && !Number.isFinite(Number(next.value))) {
-    return j({ error: "Value required for this type." }, 400);
+    if (res.length === 0) return j({ error: "Not found" }, 404);
+    return j(res[0]);
+  } catch (e: any) {
+    return j({ error: e?.message || "Failed to update promo." }, 500);
   }
-
-  list[idx] = next;
-  await writePromos(list);
-  return j(next);
 }
 
+/* DELETE /api/promos/:code */
 export async function DELETE(_req: Request, { params }: { params: { code: string } }) {
-  const code = params.code.toUpperCase();
-  const list = await readPromos();
-  const idx = list.findIndex(p => p.code === code);
-  if (idx < 0) return j({ error: "Not found." }, 404);
-
-  list.splice(idx, 1);
-  await writePromos(list);
-  return j({ ok: true });
+  try {
+    const r = (await sql`
+      with del as (delete from promos where code = ${params.code.toUpperCase()} returning 1)
+      select count(*)::int as count from del
+    `) as { count: number }[];
+    if ((r[0]?.count ?? 0) === 0) return j({ error: "Not found" }, 404);
+    return j({ ok: true });
+  } catch (e: any) {
+    return j({ error: e?.message || "Failed to delete promo." }, 500);
+  }
 }

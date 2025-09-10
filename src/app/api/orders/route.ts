@@ -1,163 +1,120 @@
 import { NextResponse } from "next/server";
-import { sql } from "../../../lib/db";
-import { readPromos, computeDiscount } from "../../../lib/promos";
+import { sql, toJson } from "../../../lib/db";
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
-const mapOrder = (r: any) => ({
-  id: r.id,
-  createdAt: r.created_at,
-  status: r.status,
-  customer: r.customer,
-  items: r.items,
-  subtotal: Number(r.subtotal),
-  shipping: Number(r.shipping),
-  promoCode: r.promo_code ?? undefined,
-  promoDiscount: r.promo_discount ?? undefined,
-  freeShipping: !!r.free_shipping,
-  total: Number(r.total),
-  paymentMethod: r.payment_method,
-  bankSlipName: r.bank_slip_name ?? undefined,
-  bankSlipUrl: r.bank_slip_url ?? undefined,
-});
+type OrderStatus = "pending" | "paid" | "shipped" | "completed" | "cancelled";
 
 /* GET /api/orders?status=... */
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const status = url.searchParams.get("status");
+  try {
+    const url = new URL(req.url);
+    const status = url.searchParams.get("status");
 
-  const rows =
-    status
-      ? (await sql`
-          select * from orders
-          where status = ${status}
-          order by created_at desc
-        `) as any[]
-      : (await sql`
-          select * from orders
-          order by created_at desc
-        `) as any[];
-
-  return j(rows.map(mapOrder));
+    const rows = (await sql`
+      select id, created_at, status, customer, items,
+             subtotal, shipping, promo_code, promo_discount, free_shipping,
+             total, payment_method, bank_slip_name, bank_slip_url
+      from orders
+      ${status ? sql`where status = ${status}` : sql``}
+      order by created_at desc
+    `) as any[];
+    return j(rows);
+  } catch (e: any) {
+    return j({ error: e?.message || "Failed to load orders." }, 500);
+  }
 }
 
-/* POST /api/orders  (create order + stock check + reduce stock) */
+/* POST /api/orders */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+
     const items = Array.isArray(body.items) ? body.items : [];
     if (items.length === 0) return j({ error: "Empty cart." }, 400);
 
-    // 1) Check availability
-    const ids: string[] = items.map((it: any) => String(it.id));
-    const stocks =
-      ids.length === 0
-        ? []
-        : (await sql`
-            select id, name, stock
-            from products
-            where id = ANY(${ids}::text[])
-          `) as any[];
+    // availability
+    const idList = items.map((it: any) => String(it.id));
+    const dbProducts = (await sql`
+      select id, stock from products where id in (${sql(idList)})
+    `) as { id: string; stock: number }[];
+    const stockMap = new Map(dbProducts.map((p) => [p.id, Number(p.stock)]));
 
-    type Shortage = { id: string; name: string; requested: number; available: number };
-    const byId: Record<string, any> = Object.fromEntries(stocks.map((r) => [r.id, r]));
-    const shortages: Shortage[] = [];
+    const shortages: { id: string; name: string; requested: number; available: number }[] = [];
     for (const it of items) {
-      const id = String(it.id);
-      const reqQty = Math.max(1, Number(it.quantity || 1));
-      const p = byId[id];
-      const available = Number(p?.stock ?? 0);
-      if (!p || reqQty > available) {
+      const qty = Math.max(1, Number(it.quantity || 1));
+      const available = stockMap.get(String(it.id)) ?? 0;
+      if (qty > available) {
         shortages.push({
-          id,
-          name: p?.name ?? String(it.name || "Unknown item"),
-          requested: reqQty,
+          id: String(it.id),
+          name: String(it.name || "Unknown"),
+          requested: qty,
           available,
         });
       }
     }
-    if (shortages.length) {
-      return j(
-        { error: "Some items are not available in the requested quantity.", shortages },
-        409
-      );
+    if (shortages.length > 0) {
+      return j({ error: "Some items are not available.", shortages }, 409);
     }
 
-    // 2) Pricing
+    // totals
     const subtotal = items.reduce(
       (sum: number, it: any) => sum + Number(it.price || 0) * Math.max(1, Number(it.quantity || 1)),
       0
     );
-
-    let discount = 0;
-    let freeShipping = false;
-    if (body.promoCode) {
-      const promos = await readPromos();
-      const m = promos.find(
-        (p) => p.code.toUpperCase() === String(body.promoCode).toUpperCase()
-      );
-      if (m) {
-        const res = computeDiscount(m, subtotal);
-        discount = res.discount;
-        freeShipping = res.freeShipping;
-      }
-    }
-
+    const discount = Number(body.promoDiscount || 0);
+    const freeShipping = !!body.freeShipping;
     const shipping = freeShipping ? 0 : Number(body.shipping ?? 350);
     const total = Math.max(0, subtotal - discount) + shipping;
 
-    const orderId = `ord_${Date.now()}`;
-    const createdAt = new Date().toISOString();
+    const order = {
+      id: `ord_${Date.now()}`,
+      status: "pending" as OrderStatus,
+      customer: body.customer || {},
+      items: items.map((it: any) => ({
+        id: String(it.id),
+        name: String(it.name),
+        slug: String(it.slug ?? ""),
+        price: Number(it.price || 0),
+        quantity: Math.max(1, Number(it.quantity || 1)),
+      })),
+      subtotal,
+      shipping,
+      promo_code: body.promoCode ?? null,
+      promo_discount: discount || null,
+      free_shipping: freeShipping,
+      total,
+      payment_method: body.paymentMethod === "BANK" ? "BANK" : "COD",
+      bank_slip_name: body.bankSlipName ?? null,
+      bank_slip_url: body.bankSlipUrl ?? null,
+    };
 
-    // 3) Reduce stock (simple loop; small scale is fine)
-    for (const it of items) {
-      const qty = Math.max(1, Number(it.quantity || 1));
+    // deduct stock
+    for (const it of order.items) {
       await sql`
         update products
-        set stock = stock - ${qty}
-        where id = ${String(it.id)}
+        set stock = greatest(0, stock - ${it.quantity})
+        where id = ${it.id}
       `;
     }
 
-    // 4) Insert order
-    const customer = {
-      firstName: body.customer?.firstName ?? "",
-      lastName: body.customer?.lastName ?? "",
-      email: body.customer?.email ?? "",
-      address: body.customer?.address ?? "",
-      city: body.customer?.city ?? "",
-      postal: body.customer?.postal ?? "",
-      phone: body.customer?.phone ?? "",
-      notes: body.customer?.notes ?? "",
-      shipToDifferent: body.shipDifferent
-        ? {
-            name: `${body.shippingAddress?.firstName ?? ""} ${body.shippingAddress?.lastName ?? ""}`.trim(),
-            phone: body.shippingAddress?.phone ?? "",
-            address: body.shippingAddress?.address ?? "",
-            city: body.shippingAddress?.city ?? "",
-            postal: body.shippingAddress?.postal ?? "",
-          }
-        : undefined,
-    };
-
-    const normItems = items.map((it: any) => ({
-      id: String(it.id),
-      name: String(it.name),
-      slug: String(it.slug ?? ""),
-      price: Number(it.price || 0),
-      quantity: Math.max(1, Number(it.quantity || 1)),
-    }));
-
+    // save order
     await sql`
-      insert into orders
-        (id, created_at, status, customer, items, subtotal, shipping, promo_code, promo_discount, free_shipping, total, payment_method, bank_slip_name, bank_slip_url)
-      values
-        (${orderId}, ${createdAt}, ${"pending"}, ${customer}, ${normItems}, ${subtotal}, ${shipping},
-         ${body.promoCode ?? null}, ${discount || null}, ${freeShipping}, ${total},
-         ${body.paymentMethod === "BANK" ? "BANK" : "COD"}, ${body.bankSlipName ?? null}, ${body.bankSlipUrl ?? null})
+      insert into orders (
+        id, created_at, status, customer, items,
+        subtotal, shipping, promo_code, promo_discount, free_shipping,
+        total, payment_method, bank_slip_name, bank_slip_url
+      )
+      values (
+        ${order.id}, now(), ${order.status},
+        ${toJson(order.customer)}::jsonb, ${toJson(order.items)}::jsonb,
+        ${order.subtotal}, ${order.shipping}, ${order.promo_code}, ${order.promo_discount},
+        ${order.free_shipping}, ${order.total}, ${order.payment_method},
+        ${order.bank_slip_name}, ${order.bank_slip_url}
+      )
     `;
 
-    return j({ ok: true, orderId }, 201);
+    return j({ ok: true, orderId: order.id }, 201);
   } catch (e: any) {
     return j({ error: e?.message || "Failed to create order." }, 500);
   }
