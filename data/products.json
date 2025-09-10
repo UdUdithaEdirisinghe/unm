@@ -1,0 +1,61 @@
+[
+  {
+    "stock": 10,
+    "id": "demo-1",
+    "name": "Laptop Pro 15",
+    "slug": "laptop-pro-15",
+    "price": 300000,
+    "shortDesc": "15-inch performance laptop",
+    "image": "/uploads/u_1757513455781_qi765pwy63a.png",
+    "brand": "MannyTech",
+    "specs": {
+      "RAM": "16 GB",
+      "Storage": "512 GB SSD"
+    },
+    "salePrice": 240000
+  },
+  {
+    "id": "p_1757425050551",
+    "name": "asd",
+    "slug": "dsf",
+    "image": "/uploads/u_1757425033624.png",
+    "price": 324,
+    "shortDesc": "gdtty",
+    "brand": "gh",
+    "specs": {
+      "RAM": "rtgytr",
+      "Storage": "rrgrety"
+    },
+    "stock": 0
+  },
+  {
+    "id": "p_1757429988646",
+    "name": "fdgg",
+    "slug": "dfgdfd",
+    "image": "/uploads/u_1757429985199_5wqfg3yj7pb.png",
+    "price": 54548,
+    "salePrice": 475578,
+    "shortDesc": "gdfgdfgsdf",
+    "brand": "dsgdfs",
+    "specs": {
+      "RAM": "ASD : fvsd",
+      "Storage": "AD: Fgebnjkn",
+      "ghjhg": "ghjgh"
+    },
+    "stock": 0
+  },
+  {
+    "id": "p_1757444063232",
+    "name": "dgfsg",
+    "slug": "fdgfds",
+    "image": "/uploads/u_1757444036533_yaqj5gtk18h.png",
+    "price": 93000,
+    "shortDesc": "dfggfsd",
+    "brand": "fdgsgfd",
+    "specs": {
+      "RAM": "gfdsg",
+      "Storage": "gdfsgsdf"
+    },
+    "stock": 68
+  }
+]

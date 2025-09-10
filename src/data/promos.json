@@ -1,0 +1,25 @@
+[
+  {
+    "code": "FD",
+    "type": "freeShipping",
+    "enabled": true,
+    "startsAt": "2025-09-08T18:30:00.000Z",
+    "endsAt": "2025-09-10T18:29:59.000Z"
+  },
+  {
+    "code": "GF",
+    "type": "percent",
+    "value": 10,
+    "enabled": true,
+    "startsAt": "2025-09-07T18:30:00.000Z",
+    "endsAt": "2025-09-10T18:29:59.000Z"
+  },
+  {
+    "code": "MANNY1000",
+    "type": "fixed",
+    "value": 1000,
+    "enabled": true,
+    "startsAt": "2025-09-08T18:30:00.000Z",
+    "endsAt": "2025-10-09T18:29:59.000Z"
+  }
+]
