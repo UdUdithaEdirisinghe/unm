@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "../../../lib/db";
 
-const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
+const j = (data: any, status = 200) => NextResponse.json(data, { status });
 
 /* GET /api/products */
 export async function GET() {
@@ -13,17 +13,16 @@ export async function GET() {
       order by created_at desc
     `;
 
-    // DB -> API shape
     const products = rows.map((r: any) => ({
-      id: r.id,
-      name: r.name,
-      slug: r.slug,
-      image: r.image,
+      id: r.id as string,
+      name: r.name as string,
+      slug: r.slug as string,
+      image: r.image as string,
       price: Number(r.price),
       salePrice: r.sale_price ?? undefined,
       shortDesc: r.short_desc ?? "",
       brand: r.brand ?? "",
-      specs: r.specs ?? undefined,
+      specs: r.specs ?? undefined,       // JSONB
       stock: Number(r.stock ?? 0),
     }));
 
@@ -38,33 +37,41 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const name = String(body.name || "").trim();
-    const slug = String(body.slug || "").trim();
-    let image = String(body.image || "").trim();
+    const name = String(body.name ?? "").trim();
+    const slug = String(body.slug ?? "").trim();
+    let image = String(body.image ?? "").trim();
     const price = Number(body.price);
     const salePrice =
-      body.salePrice === "" || body.salePrice == null ? null : Number(body.salePrice);
+      body.salePrice === "" || body.salePrice == null
+        ? null
+        : Number(body.salePrice);
     const stock = Number(body.stock ?? 0);
     const shortDesc = String(body.shortDesc ?? "");
     const brand = String(body.brand ?? "");
     const specs = body.specs ?? null;
 
     if (!name || !slug || !image || !Number.isFinite(price)) {
-      return j({ error: "Missing required fields: name, slug, image, price." }, 400);
+      return j({ error: "Missing name, slug, image or price." }, 400);
     }
-    if (!image.startsWith("/") && !/^https?:\/\//i.test(image)) image = `/${image}`;
+    if (!image.startsWith("/") && !/^https?:\/\//i.test(image)) {
+      image = `/${image}`;
+    }
 
     // unique slug?
     const dup = await sql`select 1 from products where slug = ${slug} limit 1`;
     if (dup.length) return j({ error: "Slug already exists." }, 409);
 
+    const id = `p_${Date.now()}`;
+
     const inserted = await sql`
-      insert into products (name, slug, image, price, sale_price, short_desc, brand, specs, stock)
-      values (${name}, ${slug}, ${image}, ${price}, ${salePrice}, ${shortDesc}, ${brand}, ${specs}, ${stock})
+      insert into products
+        (id, name, slug, image, price, sale_price, short_desc, brand, specs, stock)
+      values
+        (${id}, ${name}, ${slug}, ${image}, ${price}, ${salePrice}, ${shortDesc}, ${brand}, ${specs}, ${stock})
       returning id, name, slug, image, price, sale_price, short_desc, brand, specs, stock
     `;
 
-    const r: any = inserted[0];
+    const r = inserted[0];
     return j(
       {
         id: r.id,
@@ -84,3 +91,4 @@ export async function POST(req: Request) {
     return j({ error: e?.message || "Failed to create product." }, 500);
   }
 }
+

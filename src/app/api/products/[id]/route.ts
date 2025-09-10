@@ -4,7 +4,7 @@ import { sql } from "../../../../lib/db";
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
-/* GET /api/products/:id */
+/** GET /api/products/:id */
 export async function GET(
   _req: Request,
   { params }: { params: { id: string } }
@@ -16,9 +16,8 @@ export async function GET(
       where id = ${params.id}
       limit 1
     `;
-    if (!rows.length) return j({ error: "Not found" }, 404);
-
-    const r: any = rows[0];
+    if (rows.length === 0) return j({ error: "Not found" }, 404);
+    const r = rows[0];
     return j({
       id: r.id,
       name: r.name,
@@ -32,72 +31,59 @@ export async function GET(
       stock: Number(r.stock ?? 0),
     });
   } catch (e: any) {
-    return j({ error: e?.message || "Failed to read product." }, 500);
+    return j({ error: e?.message || "Failed to load product." }, 500);
   }
 }
 
-/* PUT /api/products/:id  — update product (supports clearing salePrice) */
+/** PUT /api/products/:id */
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   try {
     const body = await req.json();
 
-    // Load existing
-    const found = await sql`
-      select id, name, slug, image, price, sale_price, short_desc, brand, specs, stock
-      from products where id = ${params.id} limit 1
-    `;
-    if (!found.length) return j({ error: "Not found" }, 404);
-    const prev: any = found[0];
+    const name = body.name != null ? String(body.name).trim() : undefined;
+    const slug = body.slug != null ? String(body.slug).trim() : undefined;
+    const image =
+      body.image != null
+        ? (() => {
+            const raw = String(body.image).trim();
+            if (!raw) return undefined;
+            return raw.startsWith("/") || /^https?:\/\//i.test(raw)
+              ? raw
+              : `/${raw}`;
+          })()
+        : undefined;
+    const price = body.price != null ? Number(body.price) : undefined;
+    const salePrice =
+      body.salePrice === "" ? null : body.salePrice != null ? Number(body.salePrice) : undefined;
+    const stock = body.stock != null ? Number(body.stock) : undefined;
+    const shortDesc = body.shortDesc != null ? String(body.shortDesc) : undefined;
+    const brand = body.brand != null ? String(body.brand) : undefined;
+    const specs = body.specs !== undefined ? body.specs : undefined;
 
-    // Prepare next values (keep previous if not provided)
-    const nextName = body.name != null ? String(body.name).trim() : prev.name;
-    const nextSlug = body.slug != null ? String(body.slug).trim() : prev.slug;
-
-    let nextImage =
-      body.image != null ? String(body.image).trim() : String(prev.image || "");
-    if (nextImage && !nextImage.startsWith("/") && !/^https?:\/\//i.test(nextImage)) {
-      nextImage = `/${nextImage}`;
-    }
-
-    const nextPrice = body.price != null ? Number(body.price) : Number(prev.price);
-
-    // salePrice: allow clearing with "" or null
-    const nextSale =
-      body.salePrice === "" || body.salePrice === null
-        ? null
-        : body.salePrice != null
-        ? Number(body.salePrice)
-        : prev.sale_price;
-
-    const nextShort = body.shortDesc != null ? String(body.shortDesc) : prev.short_desc;
-    const nextBrand = body.brand != null ? String(body.brand) : prev.brand;
-    const nextSpecs = body.specs != null ? body.specs : prev.specs;
-    const nextStock = body.stock != null ? Number(body.stock) : Number(prev.stock ?? 0);
-
-    // unique slug?
-    if (nextSlug !== prev.slug) {
+    if (slug) {
       const dup = await sql`
-        select 1 from products where slug = ${nextSlug} and id <> ${params.id} limit 1
+        select 1 from products where slug = ${slug} and id <> ${params.id} limit 1
       `;
       if (dup.length) return j({ error: "Slug already exists." }, 409);
     }
 
     const updated = await sql`
-      update products
-      set name = ${nextName},
-          slug = ${nextSlug},
-          image = ${nextImage},
-          price = ${nextPrice},
-          sale_price = ${nextSale},
-          short_desc = ${nextShort},
-          brand = ${nextBrand},
-          specs = ${nextSpecs},
-          stock = ${nextStock}
+      update products set
+        name = coalesce(${name}, name),
+        slug = coalesce(${slug}, slug),
+        image = coalesce(${image}, image),
+        price = coalesce(${price}, price),
+        sale_price = ${salePrice} is not null ? ${salePrice} : sale_price,
+        short_desc = coalesce(${shortDesc}, short_desc),
+        brand = coalesce(${brand}, brand),
+        specs = coalesce(${specs}, specs),
+        stock = coalesce(${stock}, stock)
       where id = ${params.id}
       returning id, name, slug, image, price, sale_price, short_desc, brand, specs, stock
     `;
 
-    const r: any = updated[0];
+    if (updated.length === 0) return j({ error: "Not found" }, 404);
+    const r = updated[0];
     return j({
       id: r.id,
       name: r.name,
@@ -115,15 +101,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   }
 }
 
-/* DELETE /api/products/:id */
+/** DELETE /api/products/:id */
 export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const res = await sql`delete from products where id = ${params.id} returning id`;
-    if (!res.length) return j({ error: "Not found" }, 404);
-    return j({ ok: true, id: res[0].id });
+    const del = await sql`delete from products where id = ${params.id} returning id`;
+    if (del.length === 0) return j({ error: "Not found" }, 404);
+    return j({ ok: true });
   } catch (e: any) {
     return j({ error: e?.message || "Delete failed." }, 500);
   }
