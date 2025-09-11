@@ -2,20 +2,22 @@
 import { NextResponse } from "next/server";
 import sql from "../../../../lib/db";
 
-const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
+const j = (d: unknown, s = 200) => NextResponse.json(d, { status: s });
 
-/* ---------- helpers ---------- */
-function toIsoDate(raw: any): string {
+/* ---------------- helpers ---------------- */
+
+function toIsoDate(row: any): string {
   const v =
-    raw?.createdAt ??
-    raw?.created_at ??
-    raw?.created_at_iso ??
-    raw?.created ??
+    row?.createdAt ??
+    row?.created_at ??
+    row?.created_at_iso ??
+    row?.created ??
     null;
 
   if (!v) return new Date().toISOString();
   if (typeof v === "number") return new Date(v).toISOString();
   if (typeof v === "string") {
+    // number-like?
     const n = Number(v);
     if (Number.isFinite(n) && v.length >= 10) return new Date(n).toISOString();
     const d = new Date(v);
@@ -31,6 +33,7 @@ function parseMaybeJson<T = unknown>(v: any): T | undefined {
     try {
       return JSON.parse(v) as T;
     } catch {
+      // tolerate bad text—just ignore
       return undefined;
     }
   }
@@ -38,25 +41,30 @@ function parseMaybeJson<T = unknown>(v: any): T | undefined {
 }
 
 function coerceItems(raw: any): Array<any> {
-  // items could be column 'items' or 'line_items', in json or text
   const v = raw?.items ?? raw?.line_items ?? null;
-  if (!v) return [];
   const parsed = parseMaybeJson<any[]>(v);
   if (Array.isArray(parsed)) return parsed;
   if (Array.isArray(v)) return v;
   return [];
 }
 
-/* Merge priority: JSON.customer -> flat columns (JSON wins) */
+function truthy(v: unknown) {
+  if (v === true) return true;
+  if (v === false) return false;
+  if (v == null) return false;
+  const s = String(v).toLowerCase().trim();
+  return s === "true" || s === "1" || s === "yes";
+}
+
+/** Merge DB row into the API shape the app expects */
 function mapRowToOrder(row: any) {
+  // customer may be JSONB (object) or text
   const customerJson = parseMaybeJson<any>(row?.customer) || {};
 
-  // Base customer from flat columns
+  // build a flat customer from columns (snake/camel tolerated)
   const flatCustomer = {
-    firstName:
-      row.first_name ?? row.firstname ?? row.firstName ?? "",
-    lastName:
-      row.last_name ?? row.lastname ?? row.lastName ?? "",
+    firstName: row.first_name ?? row.firstname ?? row.firstName ?? "",
+    lastName: row.last_name ?? row.lastname ?? row.lastName ?? "",
     email: row.email ?? "",
     phone: row.phone ?? undefined,
     address: row.address ?? "",
@@ -65,7 +73,7 @@ function mapRowToOrder(row: any) {
     notes: row.notes ?? row.order_notes ?? undefined,
   };
 
-  // Optional ship-to-different from flat columns
+  // ship-to-different from flat columns (present in your schema)
   const flatShipDiff =
     row.ship_to_different_address ||
     row.ship_to_different_city ||
@@ -81,27 +89,25 @@ function mapRowToOrder(row: any) {
         }
       : undefined;
 
-  // If the JSON customer has a nested shipToDifferent, prefer/merge it
+  // ship-to-different possibly nested under customer JSON
   const jsonShipDiff =
     customerJson.shipToDifferent ||
     customerJson.ship_to_different ||
     undefined;
 
-  const shipToDifferent = {
-    ...(flatShipDiff || {}),
-    ...(jsonShipDiff || {}),
-  };
-  // remove empty shipToDifferent
+  // merge both (JSON wins if both present)
+  const mergedShip = { ...(flatShipDiff || {}), ...(jsonShipDiff || {}) };
   const hasShip =
-    shipToDifferent &&
-    Object.values(shipToDifferent).some((v) => v != null && String(v).trim() !== "");
+    Object.values(mergedShip).filter((v) => v != null && String(v).trim() !== "")
+      .length > 0;
 
   const customer = {
     ...flatCustomer,
-    ...customerJson, // JSON wins if present
-    shipToDifferent: hasShip ? shipToDifferent : undefined,
+    ...customerJson,
+    shipToDifferent: hasShip ? mergedShip : undefined,
   };
 
+  // normalize items
   const items = coerceItems(row).map((it: any) => ({
     id: String(it.id ?? it.productId ?? it.sku ?? ""),
     name: String(it.name ?? ""),
@@ -110,15 +116,25 @@ function mapRowToOrder(row: any) {
     quantity: Number(it.quantity ?? 0),
   }));
 
+  // promo + totals
+  const promoDiscount =
+    row.promo_discount != null
+      ? Number(row.promo_discount)
+      : row.promoDiscount != null
+      ? Number(row.promoDiscount)
+      : undefined;
+
+  const freeShipping =
+    row.free_shipping != null
+      ? truthy(row.free_shipping)
+      : truthy(row.freeShipping);
+
   return {
     id: String(row.id),
     createdAt: toIsoDate(row),
-    status:
-      row.status ??
-      "pending",
+    status: (row.status as string) ?? "pending",
 
     customer,
-
     items,
 
     subtotal: Number(row.subtotal ?? 0),
@@ -126,16 +142,8 @@ function mapRowToOrder(row: any) {
     total: Number(row.total ?? 0),
 
     promoCode: row.promo_code ?? row.promoCode ?? undefined,
-    promoDiscount:
-      row.promo_discount != null
-        ? Number(row.promo_discount)
-        : row.promoDiscount != null
-        ? Number(row.promoDiscount)
-        : undefined,
-    freeShipping:
-      row.free_shipping != null
-        ? Boolean(row.free_shipping)
-        : Boolean(row.freeShipping ?? false),
+    promoDiscount,
+    freeShipping,
 
     paymentMethod: row.payment_method ?? row.paymentMethod ?? "COD",
     bankSlipName: row.bank_slip_name ?? row.bankSlipName ?? undefined,
@@ -143,13 +151,16 @@ function mapRowToOrder(row: any) {
   };
 }
 
-/* ---------- GET /api/orders/:id ---------- */
+/* ---------------- routes ---------------- */
+
+// GET /api/orders/:id
 export async function GET(
   _req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const rows: any[] = await sql`SELECT * FROM orders WHERE id = ${params.id} LIMIT 1`;
+    const rows: any[] =
+      await sql`SELECT * FROM orders WHERE id = ${params.id} LIMIT 1`;
     const row = rows?.[0];
     if (!row) return j({ error: "Order not found" }, 404);
     return j(mapRowToOrder(row));
@@ -159,7 +170,7 @@ export async function GET(
   }
 }
 
-/* ---------- PUT /api/orders/:id (status only) ---------- */
+// PUT /api/orders/:id  (update status only)
 export async function PUT(
   req: Request,
   { params }: { params: { id: string } }
@@ -171,7 +182,8 @@ export async function PUT(
     if (!allowed.includes(status)) return j({ error: "Invalid status." }, 400);
 
     const rows: any[] = await sql`
-      UPDATE orders SET status = ${status}
+      UPDATE orders
+      SET status = ${status}
       WHERE id = ${params.id}
       RETURNING *
     `;
