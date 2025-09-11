@@ -31,16 +31,30 @@ export default function ProductDetail({ product }: { product: Product }) {
       ? Math.round(((product.price - salePrice) / product.price) * 100)
       : 0;
 
+  /** Render dynamic specs */
   const renderSpecs = () => {
     const s: any = product.specs;
     if (!s) return null;
-    if (Array.isArray(s)) return s.map((t: string, i: number) => <li key={i}>{t}</li>);
-    return (
-      <>
-        {s.RAM && <li>RAM: {s.RAM}</li>}
-        {s.Storage && <li>Storage: {s.Storage}</li>}
-      </>
-    );
+
+    // ✅ If specs is an object → key/value pairs
+    if (typeof s === "object" && !Array.isArray(s)) {
+      const entries = Object.entries(s).filter(
+        ([k, v]) => String(k).trim() && String(v ?? "").trim()
+      );
+      return entries.map(([k, v]) => (
+        <li key={k}>
+          <span className="font-medium text-slate-200">{k}:</span>{" "}
+          <span className="text-slate-300">{String(v)}</span>
+        </li>
+      ));
+    }
+
+    // ✅ If specs is an array → list items
+    if (Array.isArray(s)) {
+      return s.map((t: string, i: number) => <li key={i}>{t}</li>);
+    }
+
+    return null;
   };
 
   return (
@@ -89,7 +103,8 @@ export default function ProductDetail({ product }: { product: Product }) {
           )}
         </div>
 
-        <h3 className="font-semibold text-white mb-2">Specs</h3>
+        {/* Specs */}
+        <h3 className="font-semibold text-white mb-2">Specifications</h3>
         <ul className="list-disc pl-5 text-slate-300 mb-6">{renderSpecs()}</ul>
 
         {/* Qty + Buttons */}

@@ -1,26 +1,30 @@
 // src/lib/products.ts
-import { promises as fs } from "fs";
-import path from "path";
+import sql, { toJson } from "./db";
 
-/* -------------------- Products -------------------- */
-export type Specs = { RAM?: string; Storage?: string } | string[];
+/* ========= Types ========= */
 
 export type Product = {
   id: string;
   name: string;
   slug: string;
+  image: string;
   price: number;
-  salePrice?: number;
-  image: string;            // "/file.png" in /public OR full http(s) URL
-  shortDesc?: string;
-  brand?: string;
-  specs?: Specs;
-  stock?: number;           // default 0
+  salePrice?: number | null;
+  shortDesc?: string | null;
+  brand?: string | null;
+  specs?: Record<string, string> | null;
+  stock: number;
+  createdAt?: string;
 };
 
-const PRODUCTS_FILE = path.join(process.cwd(), "data", "products.json");
+export type CartItem = {
+  id: string;
+  name: string;
+  slug: string;
+  price: number;
+  quantity: number;
+};
 
-/* -------------------- Orders (kept for types) -------------------- */
 export type OrderStatus =
   | "pending"
   | "paid"
@@ -28,87 +32,144 @@ export type OrderStatus =
   | "completed"
   | "cancelled";
 
-export type OrderItem = {
-  id: string;
-  name: string;
-  slug: string;
-  price: number;   // unit price
-  quantity: number;
-};
-
 export type Order = {
   id: string;
-  createdAt: string; // ISO
+  createdAt: string;
   status: OrderStatus;
   customer: {
     firstName: string;
     lastName: string;
     email: string;
+    phone?: string;
     address: string;
     city: string;
     postal?: string;
-    phone?: string;
     notes?: string;
     shipToDifferent?: {
-      name: string;
-      phone: string;
-      address: string;
-      city: string;
+      name?: string;
+      phone?: string;
+      address?: string;
+      city?: string;
       postal?: string;
     };
   };
   paymentMethod: "COD" | "BANK";
-  bankSlipName?: string;
-  bankSlipUrl?: string;
-  items: OrderItem[];
+  bankSlipName?: string | null;
+  bankSlipUrl?: string | null;
+
+  items: CartItem[];
   subtotal: number;
   shipping: number;
-  promoCode?: string;
-  promoDiscount?: number;
-  freeShipping?: boolean;
+  promoCode?: string | null;
+  promoDiscount?: number | null;
+  freeShipping: boolean;
   total: number;
 };
 
-const ORDERS_FILE = path.join(process.cwd(), "data", "orders.json");
+/* ========= Mappers ========= */
 
-/* -------------------- Safe FS helpers -------------------- */
-async function safeRead(file: string, fallback: string) {
-  try {
-    return await fs.readFile(file, "utf8");
-  } catch {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, fallback, "utf8");
-    return fallback;
-  }
+function rowToProduct(r: any): Product {
+  return {
+    id: String(r.id),
+    name: String(r.name),
+    slug: String(r.slug),
+    image: String(r.image),
+    price: Number(r.price),
+    salePrice: r.sale_price === null ? null : Number(r.sale_price),
+    shortDesc: r.short_desc ?? null,
+    brand: r.brand ?? null,
+    specs: r.specs || null,
+    stock: Number(r.stock ?? 0),
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+  };
 }
 
-/* -------------------- Product helpers (EXPORTS you need) -------------------- */
-export async function readProducts(): Promise<Product[]> {
-  const raw = await safeRead(PRODUCTS_FILE, "[]");
-  return JSON.parse(raw) as Product[];
-}
+/* ========= Product queries ========= */
 
-export async function writeProducts(products: Product[]) {
-  await fs.mkdir(path.dirname(PRODUCTS_FILE), { recursive: true });
-  await fs.writeFile(PRODUCTS_FILE, JSON.stringify(products, null, 2), "utf8");
-}
-
-/** Convenience: used by pages */
 export async function getProducts(): Promise<Product[]> {
-  return readProducts();
+  const rows = await sql`
+    SELECT id, name, slug, image, price, sale_price, short_desc, brand, specs, stock, created_at
+    FROM products
+    ORDER BY created_at DESC
+  `;
+  return rows.map(rowToProduct);
 }
 
-export async function getProductBySlug(slug: string) {
-  const all = await readProducts();
-  return all.find((p) => p.slug === slug);
+// alias to keep old imports working (e.g. sitemap that used readProducts)
+export async function readProducts() {
+  return getProducts();
 }
 
-/* -------------------- Orders file helpers (if you use them elsewhere) -------------------- */
-export async function readOrders(): Promise<Order[]> {
-  const raw = await safeRead(ORDERS_FILE, "[]");
-  return JSON.parse(raw) as Order[];
+export async function getProductBySlug(slug: string): Promise<Product | null> {
+  const rows = await sql`
+    SELECT id, name, slug, image, price, sale_price, short_desc, brand, specs, stock, created_at
+    FROM products
+      WHERE slug = ${slug}
+    LIMIT 1
+  `;
+  return rows[0] ? rowToProduct(rows[0]) : null;
 }
-export async function writeOrders(orders: Order[]) {
-  await fs.mkdir(path.dirname(ORDERS_FILE), { recursive: true });
-  await fs.writeFile(ORDERS_FILE, JSON.stringify(orders, null, 2), "utf8");
+
+export async function createProduct(p: Omit<Product, "id" | "createdAt">) {
+  const id = `p_${Date.now()}`;
+  const rows = await sql`
+    INSERT INTO products
+      (id, name, slug, image, price, sale_price, short_desc, brand, specs, stock)
+    VALUES
+      (
+        ${id},
+        ${p.name},
+        ${p.slug},
+        ${p.image},
+        ${p.price},
+        ${p.salePrice ?? null},
+        ${p.shortDesc ?? null},
+        ${p.brand ?? null},
+        ${p.specs ? sql`${toJson(p.specs)}::jsonb` : null},
+        ${p.stock ?? 0}
+      )
+    RETURNING id, name, slug, image, price, sale_price, short_desc, brand, specs, stock, created_at
+  `;
+  return rowToProduct(rows[0]);
+}
+
+export async function updateProduct(id: string, patch: Partial<Product>) {
+  // read existing
+  const current = await sql`
+    SELECT id, name, slug, image, price, sale_price, short_desc, brand, specs, stock
+    FROM products WHERE id = ${id} LIMIT 1
+  `;
+  if (!current[0]) return null;
+
+  const prev = rowToProduct(current[0]);
+  const next: Product = {
+    ...prev,
+    ...patch,
+    salePrice: patch.salePrice === undefined ? prev.salePrice : patch.salePrice,
+    shortDesc: patch.shortDesc === undefined ? prev.shortDesc : patch.shortDesc,
+    brand: patch.brand === undefined ? prev.brand : patch.brand,
+    specs: patch.specs === undefined ? prev.specs : patch.specs,
+    stock: patch.stock === undefined ? prev.stock : patch.stock!,
+  };
+
+  const rows = await sql`
+    UPDATE products SET
+      name = ${next.name},
+      slug = ${next.slug},
+      image = ${next.image},
+      price = ${next.price},
+      sale_price = ${next.salePrice ?? null},
+      short_desc = ${next.shortDesc ?? null},
+      brand = ${next.brand ?? null},
+      specs = ${next.specs ? sql`${toJson(next.specs)}::jsonb` : null},
+      stock = ${next.stock}
+    WHERE id = ${id}
+    RETURNING id, name, slug, image, price, sale_price, short_desc, brand, specs, stock, created_at
+  `;
+  return rows[0] ? rowToProduct(rows[0]) : null;
+}
+
+export async function deleteProduct(id: string) {
+  await sql`DELETE FROM products WHERE id = ${id}`;
+  return true;
 }

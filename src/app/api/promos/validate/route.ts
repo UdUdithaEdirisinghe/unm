@@ -1,24 +1,26 @@
+// src/app/api/promos/validate/route.ts
 import { NextResponse } from "next/server";
-import { readPromos, isPromoActive, computeDiscount } from "../../../../lib/promos";
+import { getPromoByCode, isPromoActive, computeDiscount } from "../../../../lib/promos";
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
 export async function POST(req: Request) {
-  const { code, subtotal } = await req.json();
-  const list = await readPromos();
+  try {
+    const { code, subtotal } = await req.json();
 
-  const promo = list.find(
-    (p) => p.code === String(code || "").toUpperCase()
-  );
+    const c = String(code || "").trim().toUpperCase();
+    const sub = Number(subtotal) || 0;
 
-  if (!promo) return j({ valid: false, message: "Invalid code." });
-  if (!isPromoActive(promo))
-    return j({ valid: false, message: "This code is not active." });
+    if (!c) return j({ valid: false, error: "Missing promo code." }, 400);
 
-  const { discount, freeShipping } = computeDiscount(
-    promo,
-    Number(subtotal) || 0
-  );
+    const promo = await getPromoByCode(c);
+    if (!promo || !isPromoActive(promo)) {
+      return j({ valid: false, error: "Invalid or inactive promo." }, 400);
+    }
 
-  return j({ valid: true, discount, freeShipping });
+    const { discount, freeShipping } = computeDiscount(promo, sub);
+    return j({ valid: true, discount, freeShipping, promo });
+  } catch (e: any) {
+    return j({ valid: false, error: e?.message || "Validation failed." }, 500);
+  }
 }
