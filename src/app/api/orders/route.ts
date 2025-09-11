@@ -5,13 +5,7 @@ import { getPromoByCode, isPromoActive, computeDiscount } from "../../../lib/pro
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
-type CartLine = {
-  id: string;
-  name: string;
-  slug?: string;
-  price: number;
-  quantity: number;
-};
+type CartLine = { id: string; name: string; slug?: string; price: number; quantity: number };
 
 function n(v: any, d = 0) {
   const x = Number(v);
@@ -19,33 +13,32 @@ function n(v: any, d = 0) {
 }
 
 function parseItems(raw: any): CartLine[] {
-  if (Array.isArray(raw))
-    return raw.map((i) => ({
-      id: String(i.id),
-      name: String(i.name),
-      slug: i.slug ? String(i.slug) : "",
-      price: n(i.price),
-      quantity: Math.max(1, n(i.quantity, 1)),
-    }));
-  return [];
+  if (!Array.isArray(raw)) return [];
+  return raw.map((i) => ({
+    id: String(i.id),
+    name: String(i.name),
+    slug: i.slug ? String(i.slug) : "",
+    price: n(i.price),
+    quantity: Math.max(1, n(i.quantity, 1)),
+  }));
 }
 
-/* ---------- GET: list orders (Admin) ---------- */
+/* ---------- GET: list orders ---------- */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const status = url.searchParams.get("status") || undefined;
 
   const rows: any[] = status
-    ? await sql`SELECT * FROM orders WHERE status=${status} ORDER BY created_at DESC`
+    ? await sql`SELECT * FROM orders WHERE status = ${status} ORDER BY created_at DESC`
     : await sql`SELECT * FROM orders ORDER BY created_at DESC`;
 
   return j(
     rows.map((r) => ({
       id: String(r.id),
-      createdAt: String(r.created_at ?? ""),
+      createdAt: String(r.created_at ?? r.createdAt ?? ""),
       status: r.status,
-      customer: r.customer, // jsonb from DB
-      items: r.items, // jsonb from DB
+      customer: r.customer,
+      items: r.items,
       subtotal: n(r.subtotal),
       shipping: n(r.shipping),
       promoCode: r.promo_code ?? undefined,
@@ -59,46 +52,16 @@ export async function GET(req: Request) {
   );
 }
 
-/* ---------- POST: create order (Checkout) ---------- */
+/* ---------- POST: create order ---------- */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
     const items = parseItems(body.items);
     if (items.length === 0) return j({ error: "Empty cart." }, 400);
 
-    // --- Check stock availability ---
-    const shortages: { id: string; requested: number; available: number }[] = [];
-    for (const it of items) {
-      const [row] =
-        await sql`SELECT stock, name FROM products WHERE id=${it.id} LIMIT 1`;
-      const available = Number(row?.stock ?? 0);
-      if (!row || it.quantity > available) {
-        shortages.push({
-          id: it.id,
-          requested: it.quantity,
-          available,
-        });
-      }
-    }
-    if (shortages.length > 0) {
-      return j(
-        {
-          error:
-            "Some items are not available in the requested quantity. Please adjust your cart.",
-          shortages,
-        },
-        409
-      );
-    }
+    const subtotal = items.reduce((s, it) => s + it.price * it.quantity, 0);
 
-    // --- Recompute subtotal ---
-    const subtotal = items.reduce(
-      (s, it) => s + n(it.price) * it.quantity,
-      0
-    );
-
-    // --- Promo logic ---
+    // promo
     const codeRaw: string = String(body.promoCode || "").trim().toUpperCase();
     let promo_code: string | null = null;
     let promo_discount = 0;
@@ -114,14 +77,10 @@ export async function POST(req: Request) {
       }
     }
 
-    // --- Shipping ---
     const baseShipping = n(body.shipping, 350);
     const shipping = free_shipping ? 0 : baseShipping;
-
-    // --- Final total ---
     const total = Math.max(0, subtotal - promo_discount) + shipping;
 
-    // --- Customer JSON ---
     const customer = {
       firstName: String(body.customer?.firstName || ""),
       lastName: String(body.customer?.lastName || ""),
@@ -134,7 +93,7 @@ export async function POST(req: Request) {
       shipToDifferent: body.shipDifferent
         ? {
             name:
-              body.shippingAddress?.name ||
+              (body.shippingAddress?.name as string) ||
               [body.shippingAddress?.firstName, body.shippingAddress?.lastName]
                 .filter(Boolean)
                 .join(" "),
@@ -149,10 +108,71 @@ export async function POST(req: Request) {
     const payment_method = body.paymentMethod === "BANK" ? "BANK" : "COD";
     const bank_slip_name = body.bankSlipName ?? null;
     const bank_slip_url = body.bankSlipUrl ?? null;
-
     const order_id = `ord_${Date.now()}`;
 
-    // --- Insert order ---
+    // ---------- STOCK CHECK + DEDUCT ----------
+    const ids = items.map((it) => it.id);
+    const qtys = items.map((it) => it.quantity);
+
+    const stockResult: any[] = await sql`
+WITH req AS (
+  SELECT UNNEST(${ids}::text[]) AS id,
+         UNNEST(${qtys}::int[]) AS qty
+),
+chk AS (
+  SELECT p.id, COALESCE(p.stock, 0) AS stock, r.qty
+  FROM products p
+  JOIN req r ON p.id = r.id
+),
+shortages AS (
+  SELECT id, stock, qty
+  FROM chk
+  WHERE stock < qty
+),
+upd AS (
+  UPDATE products p
+  SET stock = p.stock - r.qty
+  FROM req r
+  WHERE p.id = r.id
+    AND p.stock >= r.qty
+  RETURNING p.id
+)
+SELECT
+  COALESCE((SELECT json_agg(shortages) FROM shortages), '[]'::json) AS shortages,
+  (SELECT COUNT(*) FROM upd) AS updated_count
+`;
+
+    const stockRow = stockResult[0] || {};
+    const shortages = Array.isArray(stockRow.shortages)
+      ? stockRow.shortages
+      : [];
+    const updatedCount = Number(stockRow.updated_count || 0);
+
+    if (shortages.length > 0 || updatedCount !== items.length) {
+      const availRows: any[] =
+        await sql`SELECT id, COALESCE(stock, 0) AS stock FROM products WHERE id = ANY(${ids}::text[])`;
+      const availability: Record<string, number> = {};
+      for (const r of availRows)
+        availability[String(r.id)] = Number(r.stock || 0);
+
+      const detailed = items.map((it) => ({
+        id: it.id,
+        name: it.name,
+        requested: it.quantity,
+        available: availability[it.id] ?? 0,
+      }));
+
+      return j(
+        {
+          error:
+            "Some items are not available in the requested quantity. Please adjust your cart.",
+          shortages: detailed.filter((d) => d.available < d.requested),
+        },
+        409
+      );
+    }
+
+    // ---------- INSERT ORDER ----------
     const rows: any[] = await sql`
       INSERT INTO orders (
         id, created_at, status,
@@ -195,7 +215,6 @@ export async function POST(req: Request) {
       201
     );
   } catch (e: any) {
-    console.error("[orders POST]", e);
     return j({ error: e?.message || "Failed to create order." }, 500);
   }
 }
