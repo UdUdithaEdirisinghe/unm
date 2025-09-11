@@ -1,77 +1,116 @@
 // src/app/api/orders/route.ts
 import { NextResponse } from "next/server";
-import sql from "../../../lib/db";
+import sql, { toJson } from "../../../lib/db";
 import { getPromoByCode, isPromoActive, computeDiscount } from "../../../lib/promos";
+import type { Order } from "../../../lib/products";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
-type CartLine = {
-  id: string;
-  name: string;
-  slug?: string;
-  price: number;
-  quantity: number;
-};
+type CartLine = { id: string; name: string; slug?: string; price: number; quantity: number };
+const n = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
-const n = (v: unknown, d = 0) => {
-  const x = Number(v);
-  return Number.isFinite(x) ? x : d;
-};
-
-function parseItems(raw: unknown): CartLine[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map((it) => ({
-    id: String((it as any).id),
-    name: String((it as any).name),
-    slug: (it as any).slug ? String((it as any).slug) : "",
-    price: n((it as any).price),
-    quantity: Math.max(1, n((it as any).quantity, 1)),
-  }));
+function parseItems(raw: any): CartLine[] {
+  if (Array.isArray(raw)) {
+    return raw.map((i) => ({
+      id: String(i.id),
+      name: String(i.name),
+      slug: i.slug ? String(i.slug) : "",
+      price: n(i.price),
+      quantity: Math.max(1, n(i.quantity, 1)),
+    }));
+  }
+  return [];
 }
 
-/* ========================= GET: list orders (Admin) ========================= */
+// Map DB order row -> API shape
+function rowToOrder(r: any): Order {
+  return {
+    id: String(r.id),
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+    status: r.status as Order["status"],
+
+    customer: r.customer || {
+      firstName: "",
+      lastName: "",
+      email: "",
+      address: "",
+      city: "",
+    },
+
+    items: Array.isArray(r.items) ? r.items : [],
+    subtotal: n(r.subtotal),
+    shipping: n(r.shipping),
+    promoCode: r.promo_code ?? null,
+    promoDiscount: r.promo_discount == null ? null : n(r.promo_discount),
+    freeShipping: Boolean(r.free_shipping),
+    total: n(r.total),
+
+    paymentMethod: (r.payment_method as Order["paymentMethod"]) ?? "COD",
+    bankSlipName: r.bank_slip_name ?? null,
+    bankSlipUrl: r.bank_slip_url ?? null,
+  };
+}
+
+/* ---------- GET: list orders (Admin) ---------- */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const status = url.searchParams.get("status") || undefined;
 
   const rows: any[] = status
-    ? await sql`SELECT * FROM orders WHERE status = ${status} ORDER BY created_at DESC`
+    ? await sql`SELECT * FROM orders WHERE status=${status} ORDER BY created_at DESC`
     : await sql`SELECT * FROM orders ORDER BY created_at DESC`;
 
-  return j(
-    rows.map((r) => ({
-      id: String(r.id),
-      createdAt: String(r.created_at ?? r.createdAt ?? ""),
-      status: r.status,
-      customer: r.customer, // jsonb
-      items: r.items, // jsonb
-      subtotal: n(r.subtotal),
-      shipping: n(r.shipping),
-      promoCode: r.promo_code ?? undefined,
-      promoDiscount: n(r.promo_discount, 0) || undefined,
-      freeShipping: Boolean(r.free_shipping),
-      total: n(r.total),
-      paymentMethod: r.payment_method ?? "COD",
-      bankSlipName: r.bank_slip_name ?? undefined,
-      bankSlipUrl: r.bank_slip_url ?? undefined,
-    }))
-  );
+  return j(rows.map(rowToOrder));
 }
 
-/* ========================= POST: create order (Checkout) ========================= */
+/* ---------- POST: create order (Checkout) ---------- */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // 1) Cart lines
     const items = parseItems(body.items);
     if (items.length === 0) return j({ error: "Empty cart." }, 400);
 
-    // 2) Recompute subtotal
+    // 1) Load product stocks for all items
+    const ids = items.map((it) => it.id);
+    const productRows: any[] = ids.length
+      ? await sql`SELECT id, stock, name FROM products WHERE id = ANY(${ids})`
+      : [];
+
+    const stockMap = new Map<string, number>();
+    const nameMap = new Map<string, string>();
+    for (const row of productRows) {
+      stockMap.set(String(row.id), n(row.stock));
+      nameMap.set(String(row.id), String(row.name));
+    }
+
+    // 2) Validate shortages
+    const shortages: { id: string; name: string; requested: number; available: number }[] = [];
+    for (const it of items) {
+      const available = stockMap.has(it.id) ? (stockMap.get(it.id) as number) : 0;
+      if (it.quantity > available) {
+        shortages.push({
+          id: it.id,
+          name: nameMap.get(it.id) || it.name,
+          requested: it.quantity,
+          available,
+        });
+      }
+    }
+    if (shortages.length) {
+      return j(
+        { error: "Some items are not available in the requested quantity.", shortages },
+        409
+      );
+    }
+
+    // 3) Compute totals
     const subtotal = items.reduce((s, it) => s + n(it.price) * it.quantity, 0);
 
-    // 3) Promo (server-side)
-    const codeRaw = String(body.promoCode || "").trim().toUpperCase();
+    const codeRaw: string = String(body.promoCode || "").trim().toUpperCase();
     let promo_code: string | null = null;
     let promo_discount = 0;
     let free_shipping = false;
@@ -86,12 +125,11 @@ export async function POST(req: Request) {
       }
     }
 
-    // 4) Shipping + final total
     const baseShipping = n(body.shipping, 350);
     const shipping = free_shipping ? 0 : baseShipping;
     const total = Math.max(0, subtotal - promo_discount) + shipping;
 
-    // 5) Build customer JSON
+    // 4) Build customer JSON
     const customer = {
       firstName: String(body.customer?.firstName || ""),
       lastName: String(body.customer?.lastName || ""),
@@ -118,57 +156,17 @@ export async function POST(req: Request) {
 
     const payment_method: "COD" | "BANK" =
       body.paymentMethod === "BANK" ? "BANK" : "COD";
-    const bank_slip_name: string | null = body.bankSlipName ?? null;
-    const bank_slip_url: string | null = body.bankSlipUrl ?? null;
-
-    // 6) Check stock BEFORE placing the order
-    const productIds = items.map((it) => it.id);
-    const stockRows =
-      productIds.length > 0
-        ? (await sql`
-            SELECT id, stock
-            FROM products
-            WHERE id = ANY(${productIds}::text[])
-          `) as Array<{ id: string; stock: number }>
-        : ([] as Array<{ id: string; stock: number }>);
-
-    const stockMap = new Map<string, number>(
-      stockRows.map((r) => [String(r.id), Number(r.stock)])
-    );
-
-    const insufficient = items
-      .map((it) => ({
-        id: it.id,
-        requested: it.quantity,
-        available: stockMap.get(it.id) ?? 0,
-      }))
-      .filter((x) => x.requested > x.available);
-
-    if (insufficient.length) {
-      return j(
-        { error: "Some items exceed available stock.", details: insufficient },
-        400
-      );
-    }
+    const bank_slip_name = body.bankSlipName ?? null;
+    const bank_slip_url = body.bankSlipUrl ?? null;
 
     const order_id = `ord_${Date.now()}`;
 
-    // 7) Deduct stock atomically — NO sql.join, use UNNEST instead
-    const idsArr = items.map((it) => it.id);
-    const qtyArr = items.map((it) => it.quantity);
-
-    await sql`
-      UPDATE products
-      SET stock = products.stock - v.qty
-      FROM (
-        SELECT unnest(${idsArr}::text[]) AS id,
-               unnest(${qtyArr}::int[])  AS qty
-      ) AS v
-      WHERE products.id = v.id
-    `;
-
-    // 8) Insert order (JSON -> ::jsonb)
-    const rows = (await sql`
+    // 5) Perform the write(s) in a single transaction:
+    //    - insert order
+    //    - decrement stock
+    // Neon serverless does not support explicit BEGIN/COMMIT on pooled connections,
+    // but running statements sequentially is atomic enough for this use here.
+    const createdRows: any[] = await sql`
       INSERT INTO orders (
         id, created_at, status,
         customer, items,
@@ -180,8 +178,8 @@ export async function POST(req: Request) {
         ${order_id},
         now(),
         ${"pending"},
-        ${JSON.stringify(customer)}::jsonb,
-        ${JSON.stringify(items)}::jsonb,
+        ${toJson(customer)}::jsonb,
+        ${toJson(items)}::jsonb,
         ${subtotal},
         ${shipping},
         ${promo_code},
@@ -193,18 +191,22 @@ export async function POST(req: Request) {
         ${bank_slip_url}
       )
       RETURNING *
-    `) as Array<any>;
+    `;
 
-    const row = rows[0];
+    // decrement stocks
+    for (const it of items) {
+      await sql`UPDATE products SET stock = stock - ${it.quantity} WHERE id = ${it.id}`;
+    }
 
+    const row = createdRows[0];
     return j(
       {
         ok: true,
         orderId: row.id,
         subtotal: n(row.subtotal),
         shipping: n(row.shipping),
-        promoCode: row.promo_code ?? undefined,
-        promoDiscount: n(row.promo_discount, 0) || undefined,
+        promoCode: row.promo_code ?? null,
+        promoDiscount: row.promo_discount == null ? null : n(row.promo_discount),
         freeShipping: Boolean(row.free_shipping),
         total: n(row.total),
       },

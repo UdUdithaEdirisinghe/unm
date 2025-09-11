@@ -1,52 +1,51 @@
 // src/app/api/products/[id]/status/route.ts
 import { NextResponse } from "next/server";
-import sql from "../../../../../lib/db";
+import { updateProduct, type Product } from "../../../../../lib/products";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
-function mapRow(r: any) {
-  return {
-    id: String(r.id),
-    name: String(r.name),
-    slug: String(r.slug),
-    image: String(r.image),
-    price: Number(r.price),
-    salePrice: r.sale_price === null ? null : Number(r.sale_price),
-    shortDesc: r.short_desc ?? null,
-    brand: r.brand ?? null,
-    specs: r.specs || null,
-    stock: Number(r.stock ?? 0),
-    createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
-  };
-}
-
 /**
- * PATCH body: { stock: number }
- * - stock must be >= 0 (integer)
+ * PATCH /api/products/:id/status
+ * Accepts a minimal patch for quick admin actions:
+ * { stock?: number, price?: number, salePrice?: number | null }
+ * (You can add brand/shortDesc/specs later if you want.)
  */
 export async function PATCH(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const raw = body?.stock;
+    const body = (await req.json().catch(() => ({}))) as Partial<
+      Pick<Product, "stock" | "price" | "salePrice">
+    >;
 
-    const stock = Number.isFinite(Number(raw)) ? Math.max(0, Math.floor(Number(raw))) : NaN;
-    if (!Number.isFinite(stock)) {
-      return j({ error: "Invalid stock value." }, 400);
+    const patch: Partial<Product> = {};
+
+    if (body.stock != null) patch.stock = Number(body.stock);
+    if (body.price != null) patch.price = Number(body.price);
+
+    // salePrice: allow number or null (clear discount when null)
+    if (Object.prototype.hasOwnProperty.call(body, "salePrice")) {
+      patch.salePrice =
+        body.salePrice === null ? null : Number(body.salePrice);
     }
 
-    const rows = await sql`
-      UPDATE products
-      SET stock = ${stock}
-      WHERE id = ${params.id}
-      RETURNING id, name, slug, image, price, sale_price, short_desc, brand, specs, stock, created_at
-    `;
-    if (!rows[0]) return j({ error: "Product not found." }, 404);
+    if (
+      patch.stock === undefined &&
+      patch.price === undefined &&
+      patch.salePrice === undefined
+    ) {
+      return j({ error: "Nothing to update." }, 400);
+    }
 
-    return j(mapRow(rows[0]));
+    const updated = await updateProduct(params.id, patch);
+    if (!updated) return j({ error: "Product not found." }, 404);
+
+    return j(updated, 200);
   } catch (e: any) {
-    return j({ error: e?.message || "Failed to update product status." }, 500);
+    return j({ error: e?.message || "Failed to update product." }, 500);
   }
 }
