@@ -40,7 +40,7 @@ export default function FloatingWhatsApp({ phone, label, routes }: Props) {
       <span className="inline-flex h-9 w-9 items-center justify-center rounded-full"
             style={{ backgroundColor: "#25D366" }}>
         <Image
-          src="/whatsapp.svg"
+          src="/logo/whatsapp.svg"
           alt="WhatsApp"
           width={20}
           height={20}
