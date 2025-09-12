@@ -1,4 +1,3 @@
-// src/lib/products.ts
 import sql, { toJson } from "./db";
 
 /* ========= Types ========= */
@@ -12,6 +11,7 @@ export type Product = {
   salePrice?: number | null;
   shortDesc?: string | null;
   brand?: string | null;
+  category?: string | null; // ← NEW
   specs?: Record<string, string> | null;
   stock: number;
   createdAt?: string;
@@ -78,6 +78,7 @@ function rowToProduct(r: any): Product {
     salePrice: r.sale_price === null ? null : Number(r.sale_price),
     shortDesc: r.short_desc ?? null,
     brand: r.brand ?? null,
+    category: r.category ?? null, // ← NEW
     specs: r.specs || null,
     stock: Number(r.stock ?? 0),
     createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
@@ -88,7 +89,7 @@ function rowToProduct(r: any): Product {
 
 export async function getProducts(): Promise<Product[]> {
   const rows = await sql`
-    SELECT id, name, slug, image, price, sale_price, short_desc, brand, specs, stock, created_at
+    SELECT id, name, slug, image, price, sale_price, short_desc, brand, category, specs, stock, created_at
     FROM products
     ORDER BY created_at DESC
   `;
@@ -102,7 +103,7 @@ export async function readProducts() {
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {
   const rows = await sql`
-    SELECT id, name, slug, image, price, sale_price, short_desc, brand, specs, stock, created_at
+    SELECT id, name, slug, image, price, sale_price, short_desc, brand, category, specs, stock, created_at
     FROM products
       WHERE slug = ${slug}
     LIMIT 1
@@ -114,7 +115,7 @@ export async function createProduct(p: Omit<Product, "id" | "createdAt">) {
   const id = `p_${Date.now()}`;
   const rows = await sql`
     INSERT INTO products
-      (id, name, slug, image, price, sale_price, short_desc, brand, specs, stock)
+      (id, name, slug, image, price, sale_price, short_desc, brand, category, specs, stock)
     VALUES
       (
         ${id},
@@ -125,10 +126,11 @@ export async function createProduct(p: Omit<Product, "id" | "createdAt">) {
         ${p.salePrice ?? null},
         ${p.shortDesc ?? null},
         ${p.brand ?? null},
+        ${p.category ?? null},             -- ← NEW
         ${p.specs ? sql`${toJson(p.specs)}::jsonb` : null},
         ${p.stock ?? 0}
       )
-    RETURNING id, name, slug, image, price, sale_price, short_desc, brand, specs, stock, created_at
+    RETURNING id, name, slug, image, price, sale_price, short_desc, brand, category, specs, stock, created_at
   `;
   return rowToProduct(rows[0]);
 }
@@ -136,7 +138,7 @@ export async function createProduct(p: Omit<Product, "id" | "createdAt">) {
 export async function updateProduct(id: string, patch: Partial<Product>) {
   // read existing
   const current = await sql`
-    SELECT id, name, slug, image, price, sale_price, short_desc, brand, specs, stock
+    SELECT id, name, slug, image, price, sale_price, short_desc, brand, category, specs, stock
     FROM products WHERE id = ${id} LIMIT 1
   `;
   if (!current[0]) return null;
@@ -148,6 +150,7 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
     salePrice: patch.salePrice === undefined ? prev.salePrice : patch.salePrice,
     shortDesc: patch.shortDesc === undefined ? prev.shortDesc : patch.shortDesc,
     brand: patch.brand === undefined ? prev.brand : patch.brand,
+    category: patch.category === undefined ? prev.category : patch.category, // ← NEW
     specs: patch.specs === undefined ? prev.specs : patch.specs,
     stock: patch.stock === undefined ? prev.stock : patch.stock!,
   };
@@ -161,10 +164,11 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
       sale_price = ${next.salePrice ?? null},
       short_desc = ${next.shortDesc ?? null},
       brand = ${next.brand ?? null},
+      category = ${next.category ?? null}, -- ← NEW
       specs = ${next.specs ? sql`${toJson(next.specs)}::jsonb` : null},
       stock = ${next.stock}
     WHERE id = ${id}
-    RETURNING id, name, slug, image, price, sale_price, short_desc, brand, specs, stock, created_at
+    RETURNING id, name, slug, image, price, sale_price, short_desc, brand, category, specs, stock, created_at
   `;
   return rows[0] ? rowToProduct(rows[0]) : null;
 }
