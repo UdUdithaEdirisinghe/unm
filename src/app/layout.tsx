@@ -14,20 +14,21 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <main className="mx-auto w-full max-w-6xl px-4 py-6">{children}</main>
           <Footer />
 
-          {/* WhatsApp bubble: desktop shows label, mobile shows only the button */}
+          {/* WhatsApp bubble: visible only on selected routes.
+             - Mobile: just the round button
+             - Desktop: button + "Need help?" label */}
           <FloatingWhatsApp
             phone="+94760703523"
             label="Need Help? Chat with us"
             routes={[
-              "/",               // home
-              "/products",       // listing
-              "/products/*",     // product details
+              "/",            // Home (exact)
+              "/products",    // List
+              "/products/*",  // Product detail
               "/about",
               "/contact",
               "/policies",
               "/faq",
               "/facts",
-              "/cart",
             ]}
           />
         </CartProvider>
