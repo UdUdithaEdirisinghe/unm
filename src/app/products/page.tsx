@@ -4,12 +4,14 @@ export const dynamic = "force-dynamic";
 import ProductCard from "../../components/ProductCard";
 import SearchBar from "../../components/SearchBar";
 import { getProducts } from "../../lib/products";
+import type { Product } from "../../lib/products";
 
+/* ---------- search helpers ---------- */
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function matches(product: any, q: string) {
+function matches(product: Product, q: string) {
   const tokens = q
     .toLowerCase()
     .split(/\s+/)
@@ -21,7 +23,7 @@ function matches(product: any, q: string) {
     product.name ?? "",
     product.brand ?? "",
     Array.isArray(product.specs)
-      ? product.specs.join(" ")
+      ? (product.specs as unknown as string[]).join(" ")
       : Object.values(product.specs ?? {}).join(" "),
   ].map((s) => String(s).toLowerCase());
 
@@ -32,20 +34,40 @@ function matches(product: any, q: string) {
   });
 }
 
+/* ---------- sort helpers (same idea as homepage) ---------- */
+function sortProducts(a: Product, b: Product) {
+  const aIn = (a.stock ?? 0) > 0;
+  const bIn = (b.stock ?? 0) > 0;
+  if (aIn !== bIn) return aIn ? -1 : 1;                       // in-stock first
+
+  const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+  const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+  if (aSale !== bSale) return aSale ? -1 : 1;                  // sale first
+
+  const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+  const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+  if (aCreated !== bCreated) return bCreated - aCreated;       // newest first
+
+  return a.name.localeCompare(b.name);                         // stable fallback
+}
+
 type PageProps = { searchParams?: { q?: string } };
 
 export default async function ProductsPage({ searchParams }: PageProps) {
   const all = await getProducts();
+
+  // apply search
   const q = (searchParams?.q ?? "").trim();
-  const filtered = q ? all.filter((p) => matches(p, q)) : all;
+  const filtered = (q ? all.filter((p) => matches(p, q)) : all).slice();
+
+  // apply ordering
+  filtered.sort(sortProducts);
 
   return (
     <div className="space-y-6">
-      {/* Header + search (keeps your layout, aligns right on wide screens) */}
+      {/* Header + search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-white">Products</h1>
-
-        {/* ✅ client-side search with URL sync */}
         <SearchBar
           initial={q}
           placeholder="Search products…"
