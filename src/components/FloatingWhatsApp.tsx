@@ -4,53 +4,49 @@ import Link from "next/link";
 import { useMemo } from "react";
 
 type Props = {
-  phone?: string;
-  message?: string;
-  label?: string;
-  showLabel?: boolean;
-  className?: string;
+  phone: string;                 // e.g. "94771234567"
+  label?: string;                // desktop-only text bubble
+  utm?: string;                  // optional UTM/source tag
+  bottom?: number;               // px from bottom
+  left?: number;                 // px from left
 };
 
 export default function FloatingWhatsApp({
-  phone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE || "",
-  message = "Hi! I need help with an order.",
-  label = "Need Help? Chat with us",
-  showLabel = true,
-  className = "",
+  phone,
+  label = "Need help? Chat with us",
+  utm = "site-bubble",
+  bottom = 24,
+  left = 24,
 }: Props) {
-  // keep only digits + plus
-  const clean = useMemo(() => phone.replace(/[^\d+]/g, ""), [phone]);
   const href = useMemo(() => {
-    const base = `https://wa.me/${clean.startsWith("+") ? clean.slice(1) : clean}`;
-    const q = `?text=${encodeURIComponent(message)}`;
-    return base + q;
-  }, [clean, message]);
-
-  if (!clean) return null;
+    // Use wa.me to open WhatsApp; include a friendly prefilled message.
+    const msg = encodeURIComponent("Hi Manny.lk 👋 I need some help.");
+    return `https://wa.me/${phone}?text=${msg}&utm_source=${encodeURIComponent(
+      utm
+    )}`;
+  }, [phone, utm]);
 
   return (
-    <div className={`fixed z-50 right-4 bottom-4 flex items-end gap-2 ${className}`}>
-      {showLabel && (
-        <div
-          className="hidden sm:block rounded-md bg-white/95 px-3 py-2 text-sm font-medium text-slate-800 shadow
-                     border border-slate-200"
-        >
-          {label}
-        </div>
-      )}
+    <div
+      className="fixed z-50 flex items-center gap-2"
+      style={{ bottom, left }}
+      aria-live="polite"
+    >
+      {/* Label bubble: hidden on small screens */}
+      <div className="hidden sm:block select-none rounded-md bg-white/95 px-3 py-2 text-sm font-medium text-slate-800 shadow-lg">
+        {label}
+      </div>
 
       <Link
         href={href}
         target="_blank"
-        rel="noopener noreferrer"
         aria-label="Chat on WhatsApp"
-        className="group inline-flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366]
-                   shadow-lg ring-1 ring-black/10 hover:scale-105 active:scale-95 transition"
+        className="grid h-12 w-12 place-items-center rounded-full bg-[#25D366] shadow-lg ring-1 ring-black/10 transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
       >
-        {/* WhatsApp SVG */}
+        {/* WhatsApp icon (inline SVG to avoid extra deps) */}
         <svg viewBox="0 0 32 32" aria-hidden="true" className="h-7 w-7 fill-white">
-          <path d="M19.11 17.55c-.3-.15-1.77-.87-2.05-.97-.28-.1-.48-.15-.69.15-.2.3-.79.97-.98 1.17-.18.2-.36.22-.66.07-.3-.15-1.25-.46-2.38-1.47-.88-.79-1.47-1.77-1.64-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.18.2-.3.3-.5.1-.2.05-.38-.02-.53-.07-.15-.69-1.66-.95-2.27-.25-.6-.5-.5-.69-.5l-.59-.01c-.2 0-.52.07-.79.38-.27.3-1.04 1.02-1.04 2.49 0 1.47 1.07 2.9 1.22 3.1.15.2 2.1 3.19 5.09 4.47.71.31 1.26.49 1.69.63.71.22 1.35.19 1.86.12.57-.08 1.77-.72 2.02-1.42.25-.7.25-1.29.17-1.42-.07-.13-.27-.2-.57-.35z"/>
-          <path d="M26.88 5.12A13.9 13.9 0 0 0 16 .75C7.86.75 1.25 7.37 1.25 15.5c0 2.6.69 5.12 2 7.36L1 31l8.33-2.18c2.17 1.18 4.62 1.8 7.12 1.8 8.13 0 14.75-6.62 14.75-14.75 0-3.94-1.53-7.64-4.32-10.75zM16.46 28.5c-2.26 0-4.48-.6-6.42-1.72l-.46-.27-4.95 1.3 1.32-4.83-.3-.5a12.3 12.3 0 0 1-1.86-6.48C3.79 8.46 9.45 2.8 16.46 2.8c3.3 0 6.41 1.29 8.75 3.62a12.29 12.29 0 0 1 3.62 8.74c0 6.99-5.67 12.66-12.37 12.66z"/>
+          <path d="M19.11 17.18c-.29-.15-1.69-.83-1.95-.93-.26-.1-.45-.15-.64.15-.19.3-.73.93-.9 1.12-.17.19-.33.22-.62.08-.29-.15-1.22-.45-2.33-1.43-.86-.76-1.44-1.7-1.61-1.99-.17-.3-.02-.46.13-.6.14-.14.3-.37.45-.56.15-.19.19-.3.29-.49.1-.19.05-.37-.03-.52-.08-.15-.64-1.54-.88-2.11-.23-.56-.47-.49-.64-.5-.17-.01-.37-.01-.56-.01-.19 0-.52.07-.79.37-.27.3-1.03 1.01-1.03 2.46 0 1.45 1.06 2.86 1.21 3.06.15.19 2.1 3.21 5.08 4.5.71.31 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.09 1.69-.69 1.93-1.35.24-.67.24-1.25.17-1.35-.07-.1-.26-.17-.55-.31z"></path>
+          <path d="M26.65 5.35C23.86 2.57 20.06 1 16 1 7.72 1 1 7.72 1 16c0 2.66.7 5.22 2.03 7.49L1 31l7.7-2c2.2 1.2 4.69 1.84 7.3 1.84 8.28 0 15-6.72 15-15 0-4.06-1.57-7.86-4.35-10.65zm-10.65 24c-2.32 0-4.55-.61-6.52-1.77l-.47-.28-4.58 1.19 1.22-4.47-.3-.46C3.2 21.5 2.5 18.81 2.5 16 2.5 8.56 8.56 2.5 16 2.5S29.5 8.56 29.5 16 23.44 29.5 16 29.5z"></path>
         </svg>
       </Link>
     </div>

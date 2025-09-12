@@ -1,28 +1,39 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import FloatingWhatsApp from "./FloatingWhatsApp";
 
-type Props = {
-  routes: string[];
-  label?: string;
-};
+/**
+ * Shows the floating WhatsApp only on selected routes.
+ * - Includes product detail pages (/products/[slug]) via startsWith('/products/')
+ * - Also About, Contact, future Policies + FAQ
+ */
+export default function WhatsAppOnRoutes() {
+  const pathname = (usePathname() || "").toLowerCase();
 
-export default function WhatsAppOnRoutes({ routes, label }: Props) {
-  const pathname = usePathname();
+  const shouldShow =
+    pathname === "/" ||
+    pathname === "/products" ||
+    pathname.startsWith("/products/") ||
+    pathname === "/about" ||
+    pathname === "/contact" ||
+    pathname === "/policies" ||
+    pathname === "/faq";
 
-  // Only show on selected routes
-  if (!routes.includes(pathname)) return null;
+  if (!shouldShow) return null;
+
+  // Optional: tweak message per page
+  let label = "Need help? Chat with us";
+  if (pathname.startsWith("/products/")) label = "Ask about this product";
+  else if (pathname === "/checkout") label = "Help with checkout";
 
   return (
-    <a
-      href="https://wa.me/94762285303" // ✅ put your business WhatsApp number here
-      target="_blank"
-      rel="noopener noreferrer"
-      className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-green-500 px-4 py-2 text-white shadow-lg hover:bg-green-600 transition"
-    >
-      {/* WhatsApp icon */}
-      <span className="text-xl">💬</span>
-      {label && <span className="hidden sm:inline">{label}</span>}
-    </a>
+    <FloatingWhatsApp
+      phone="94762285303"  
+      label={label}
+      utm="whatsapp-fab"
+      bottom={24}
+      left={24}
+    />
   );
 }
