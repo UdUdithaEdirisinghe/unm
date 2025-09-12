@@ -10,31 +10,33 @@ type Props = {
 
 export default function FloatingWhatsApp({ phone, label, routes }: Props) {
   const pathname = usePathname();
-  if (routes && !routes.includes(pathname)) return null;
 
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+  // Only show on allowed routes
+  if (routes && !routes.some((r) => pathname.startsWith(r))) return null;
+
+  const url = `https://wa.me/${phone.replace(/\D/g, "")}`;
 
   return (
     <a
-      href={`https://wa.me/${phone.replace(/\D/g, "")}`}
+      href={url}
       target="_blank"
-      rel="noopener noreferrer"
-      className="fixed bottom-6 right-6 flex items-center gap-2 z-50"
+      rel="noreferrer"
+      className="fixed bottom-5 right-5 flex items-center gap-2 z-50"
     >
-      {/* WhatsApp logo */}
-      <div className="w-12 h-12 rounded-full shadow-lg bg-green-500 flex items-center justify-center">
+      {/* Circle background */}
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-green-500 shadow-lg">
         <Image
-          src="/logo/whatsapp.png"
+          src="/logo/whatsapp.png" // <- your plain white logo
           alt="WhatsApp"
-          width={40}
-          height={40}
-          priority
+          width={28}
+          height={28}
+          className="object-contain"
         />
       </div>
 
-      {/* Show label only on desktop */}
-      {!isMobile && label && (
-        <span className="px-3 py-2 rounded-full bg-white text-slate-800 shadow-lg text-sm font-medium">
+      {/* Desktop-only label */}
+      {label && (
+        <span className="hidden sm:inline-block whitespace-nowrap rounded-lg bg-white/10 px-3 py-2 text-sm text-white shadow">
           {label}
         </span>
       )}
