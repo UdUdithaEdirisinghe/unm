@@ -27,6 +27,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               "/policies",
               "/faq",
               "/facts",
+              "/cart",
             ]}
           />
         </CartProvider>
