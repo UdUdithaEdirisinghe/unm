@@ -25,7 +25,7 @@ export default function FloatingWhatsApp({ phone, label, routes }: Props) {
       className="fixed bottom-5 right-5 z-50 flex items-center gap-2"
     >
       {/* ✅ Better logo handling */}
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-lg">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500 shadow-lg">
         <Image
           src="/logo/whatsapp.png" // put your uploaded logo in public/whatsapp.png
           alt="WhatsApp"
