@@ -1,4 +1,3 @@
-// src/app/products/page.tsx
 export const dynamic = "force-dynamic";
 
 import ProductCard from "../../components/ProductCard";
@@ -22,33 +21,35 @@ function matches(product: Product, q: string) {
   const haystacks: string[] = [
     product.name ?? "",
     product.brand ?? "",
+    (product as any).category ?? "",
     Array.isArray(product.specs)
       ? (product.specs as unknown as string[]).join(" ")
       : Object.values(product.specs ?? {}).join(" "),
   ].map((s) => String(s).toLowerCase());
 
-  // every token must match as a whole word in at least one field
   return tokens.every((t) => {
     const re = new RegExp(`\\b${escapeRegExp(t)}\\b`, "i");
     return haystacks.some((h) => re.test(h));
   });
 }
 
-/* ---------- sort helpers (same idea as homepage) ---------- */
+/* ---------- sort helpers ---------- */
 function sortProducts(a: Product, b: Product) {
   const aIn = (a.stock ?? 0) > 0;
   const bIn = (b.stock ?? 0) > 0;
-  if (aIn !== bIn) return aIn ? -1 : 1;                       // in-stock first
+  if (aIn !== bIn) return aIn ? -1 : 1; // in-stock first
 
-  const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
-  const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
-  if (aSale !== bSale) return aSale ? -1 : 1;                  // sale first
+  const aSale =
+    typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+  const bSale =
+    typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+  if (aSale !== bSale) return aSale ? -1 : 1; // sale first
 
   const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
   const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-  if (aCreated !== bCreated) return bCreated - aCreated;       // newest first
+  if (aCreated !== bCreated) return bCreated - aCreated; // newest first
 
-  return a.name.localeCompare(b.name);                         // stable fallback
+  return a.name.localeCompare(b.name); // stable fallback
 }
 
 type PageProps = { searchParams?: { q?: string } };
@@ -56,11 +57,9 @@ type PageProps = { searchParams?: { q?: string } };
 export default async function ProductsPage({ searchParams }: PageProps) {
   const all = await getProducts();
 
-  // apply search
   const q = (searchParams?.q ?? "").trim();
   const filtered = (q ? all.filter((p) => matches(p, q)) : all).slice();
 
-  // apply ordering
   filtered.sort(sortProducts);
 
   return (

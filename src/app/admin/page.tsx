@@ -26,6 +26,7 @@ type Draft = {
   stock: string;
   price: string;
   salePrice: string;
+  category: string; // ✅ new
   specsRows: { key: string; value: string }[];
 };
 const EMPTY: Draft = {
@@ -37,6 +38,7 @@ const EMPTY: Draft = {
   stock: "0",
   price: "",
   salePrice: "",
+  category: "", // ✅ new
   specsRows: [{ key: "", value: "" }],
 };
 
@@ -141,7 +143,7 @@ export default function AdminPage() {
   /* product handlers */
   function edit(p: Product) {
     const rows: { key: string; value: string }[] = [];
-    const s: any = p.specs;
+    const s: any = (p as any).specs;
     if (s && !Array.isArray(s) && typeof s === "object") {
       Object.entries(s).forEach(([k, v]) =>
         rows.push({ key: String(k), value: String(v ?? "") })
@@ -159,6 +161,7 @@ export default function AdminPage() {
       stock: String(p.stock ?? 0),
       price: String(p.price),
       salePrice: p.salePrice != null ? String(p.salePrice) : "",
+      category: (p as any).category ?? "", // ✅ pulls existing category if present
       specsRows: rows,
     });
     setMsg(null);
@@ -193,6 +196,7 @@ export default function AdminPage() {
       image: img,
       brand: draft.brand.trim(),
       shortDesc: draft.shortDesc.trim(),
+      category: draft.category.trim() || undefined, // ✅ include if provided
       specs,
       stock: Number(draft.stock) || 0,
       price,
@@ -348,12 +352,10 @@ export default function AdminPage() {
     });
 
     if (!r.ok) {
-      // revert on error & show message
       const text = await r.text();
       setErr(text || "Failed to update order status.");
       await load();
     } else {
-      // refresh list to reflect filter changes immediately
       await load();
     }
   }
@@ -404,6 +406,14 @@ export default function AdminPage() {
           placeholder="Slug (e.g. powerbank-10k)"
           value={draft.slug}
           onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
+        />
+
+        {/* ✅ Category */}
+        <input
+          className="field"
+          placeholder="Category (e.g. Audio, Laptop, Phone…)"
+          value={draft.category}
+          onChange={(e) => setDraft({ ...draft, category: e.target.value })}
         />
 
         <div className="flex gap-2 md:col-span-2">
@@ -531,6 +541,7 @@ export default function AdminPage() {
             {products.map((p) => {
               const onSale =
                 p.salePrice && p.salePrice > 0 && p.salePrice < p.price;
+              const category = (p as any).category as string | undefined; // ✅ safe read
               return (
                 <div
                   key={p.id}
@@ -541,6 +552,11 @@ export default function AdminPage() {
                     <div className="text-xs text-slate-400 truncate">
                       {p.slug}
                     </div>
+                    {category && (
+                      <div className="text-xs text-slate-400 truncate">
+                        Category: {category}
+                      </div>
+                    )}
                     <div className="mt-1 flex items-center gap-2">
                       {onSale ? (
                         <>

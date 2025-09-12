@@ -64,10 +64,10 @@ export default function ProductCard({ product }: Props) {
         </div>
       </Link>
 
-      {/* Title / brand */}
+      {/* Title / brand / category */}
       <div className="mt-3 flex-1">
         <Link
-          href={`{products/${product.slug}`}
+          href={`/products/${product.slug}`}
           className="block truncate font-medium text-white"
           title={product.name}
         >
@@ -75,6 +75,11 @@ export default function ProductCard({ product }: Props) {
         </Link>
         {product.brand && (
           <div className="text-xs text-slate-400 truncate">{product.brand}</div>
+        )}
+        {(product as any).category && (
+          <div className="text-xs text-slate-500 truncate">
+            {(product as any).category}
+          </div>
         )}
       </div>
 
