@@ -1,55 +1,44 @@
+// src/components/FloatingWhatsApp.tsx
 "use client";
-
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
 
 type Props = {
-  phone: string;           // e.g. "+94762285303"
-  label?: string;          // bubble text for desktop
-  routes: string[];        // pages to show on; supports "/*" prefix matches
+  phone: string;
+  label: string;
+  routes: string[];
 };
 
-/** Show on specific routes; hide label on mobile; use crisp WhatsApp SVG icon */
 export default function FloatingWhatsApp({ phone, label, routes }: Props) {
   const pathname = usePathname();
-  const [isMobile, setIsMobile] = useState(false);
-
-  useEffect(() => {
-    const set = () => setIsMobile(window.innerWidth < 768);
-    set();
-    window.addEventListener("resize", set);
-    return () => window.removeEventListener("resize", set);
-  }, []);
-
-  // support exact ("/about") and prefix ("/products/*")
-  const allowed = routes.some((r) =>
-    r.endsWith("/*") ? pathname.startsWith(r.slice(0, -2)) : pathname === r
+  const show = routes.some((r) =>
+    pathname === r || pathname.startsWith(r + "/")
   );
-  if (!allowed) return null;
 
-  const href = `https://wa.me/${phone.replace(/\D/g, "")}`;
+  if (!show) return null;
 
   return (
     <a
-      href={href}
+      href={`https://wa.me/${phone.replace(/\D/g, "")}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-full bg-white/95 px-3 py-2 shadow-lg ring-1 ring-black/5 hover:shadow-xl transition"
+      className="fixed bottom-5 right-5 z-50 flex items-center gap-2"
     >
-      <span className="inline-flex h-9 w-9 items-center justify-center rounded-full"
-            style={{ backgroundColor: "#25D366" }}>
+      {/* ✅ Better logo handling */}
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-lg">
         <Image
-          src="/logo/whatsapp.png"
+          src="/logo/whatsapp.png" // put your uploaded logo in public/whatsapp.png
           alt="WhatsApp"
-          width={20}
-          height={20}
+          width={28}
+          height={28}
           priority
         />
+      </div>
+
+      {/* ✅ Show label only on desktop */}
+      <span className="hidden md:inline rounded-lg bg-white/90 px-3 py-2 text-sm font-medium text-gray-800 shadow">
+        {label}
       </span>
-      {!isMobile && label && (
-        <span className="text-sm font-medium text-gray-800">{label}</span>
-      )}
     </a>
   );
 }
