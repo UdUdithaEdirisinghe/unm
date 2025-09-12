@@ -5,13 +5,12 @@ import Link from "next/link";
 import { useCart } from "../components/cart/CartProvider";
 import type { Product } from "../lib/products";
 import { formatCurrency } from "../lib/format";
-import { useToast } from "./ui/ToastProvider";
+import { toast } from "react-hot-toast";
 
 type Props = { product: Product };
 
 export default function ProductCard({ product }: Props) {
   const { add } = useCart();
-  const toast = useToast();
 
   const img =
     typeof product.image === "string" && product.image.trim()
@@ -27,15 +26,27 @@ export default function ProductCard({ product }: Props) {
     typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
 
   const priceToUse = hasSale ? salePrice : product.price;
-
   const discountPct =
     hasSale && salePrice
       ? Math.round(((product.price - salePrice) / product.price) * 100)
       : 0;
 
+  const handleAddToCart = () => {
+    add(
+      {
+        id: product.id,
+        name: product.name,
+        price: priceToUse,
+        image: img,
+        slug: product.slug,
+      },
+      1
+    );
+    toast.success(`${product.name} added to cart!`);
+  };
+
   return (
     <div className="relative rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-3 flex flex-col">
-      {/* Badges */}
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
         {outOfStock && (
           <span className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white shadow">
@@ -49,7 +60,6 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* Image → detail page */}
       <Link
         href={`/products/${product.slug}`}
         className="block rounded-md overflow-hidden border border-slate-800/60 bg-[rgba(10,15,28,0.4)]"
@@ -66,7 +76,6 @@ export default function ProductCard({ product }: Props) {
         </div>
       </Link>
 
-      {/* Title / brand / category */}
       <div className="mt-3 flex-1">
         <Link
           href={`/products/${product.slug}`}
@@ -85,7 +94,6 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* Price row */}
       <div className="mt-2 flex items-baseline gap-2">
         <p className="text-lg font-semibold text-white">
           {formatCurrency(priceToUse)}
@@ -97,26 +105,13 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* Add to cart */}
       <div className="mt-3">
         <button
           className={`btn-primary w-full ${
             outOfStock ? "opacity-50 cursor-not-allowed" : ""
           }`}
           disabled={outOfStock}
-          onClick={() => {
-            add(
-              {
-                id: product.id,
-                name: product.name,
-                price: priceToUse!,
-                image: img,
-                slug: product.slug,
-              },
-              1
-            );
-            toast(`Added “${product.name}” to cart`);
-          }}
+          onClick={handleAddToCart}
         >
           {outOfStock ? "Unavailable" : "Add to Cart"}
         </button>

@@ -6,11 +6,10 @@ import { useState } from "react";
 import { useCart } from "../../../components/cart/CartProvider";
 import type { Product } from "../../../lib/products";
 import { formatCurrency } from "../../../lib/format";
-import { useToast } from "../../../components/ui/ToastProvider";
+import { toast } from "react-hot-toast";
 
 export default function ProductDetail({ product }: { product: Product }) {
   const { add } = useCart();
-  const toast = useToast();
   const [qty, setQty] = useState(1);
 
   const img =
@@ -33,21 +32,34 @@ export default function ProductDetail({ product }: { product: Product }) {
       ? Math.round(((product.price - salePrice) / product.price) * 100)
       : 0;
 
+  const handleAddToCart = () => {
+    add(
+      {
+        id: product.id,
+        name: product.name,
+        price: priceToUse,
+        image: img,
+        slug: product.slug,
+      },
+      qty
+    );
+    toast.success(`${product.name} added to cart!`);
+  };
+
   /** Render dynamic specs */
   const renderSpecs = () => {
     const s: any = product.specs;
     if (!s) return null;
 
     if (typeof s === "object" && !Array.isArray(s)) {
-      const entries = Object.entries(s).filter(
-        ([k, v]) => String(k).trim() && String(v ?? "").trim()
-      );
-      return entries.map(([k, v]) => (
-        <li key={k}>
-          <span className="font-medium text-slate-200">{k}:</span>{" "}
-          <span className="text-slate-300">{String(v)}</span>
-        </li>
-      ));
+      return Object.entries(s)
+        .filter(([k, v]) => String(k).trim() && String(v ?? "").trim())
+        .map(([k, v]) => (
+          <li key={k}>
+            <span className="font-medium text-slate-200">{k}:</span>{" "}
+            <span className="text-slate-300">{String(v)}</span>
+          </li>
+        ));
     }
 
     if (Array.isArray(s)) {
@@ -59,8 +71,8 @@ export default function ProductDetail({ product }: { product: Product }) {
 
   return (
     <div className="grid gap-10 lg:grid-cols-2">
+      {/* Image */}
       <div className="relative rounded-lg overflow-hidden border border-slate-800/60 bg-[rgba(10,15,28,0.4)]">
-        {/* Badges */}
         <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
           {outOfStock && (
             <span className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white shadow">
@@ -73,7 +85,6 @@ export default function ProductDetail({ product }: { product: Product }) {
             </span>
           )}
         </div>
-
         <div className="aspect-[4/3] flex items-center justify-center bg-white">
           <Image
             src={img}
@@ -87,20 +98,18 @@ export default function ProductDetail({ product }: { product: Product }) {
         </div>
       </div>
 
+      {/* Info */}
       <div>
         <h1 className="text-3xl font-bold mb-1 text-white">{product.name}</h1>
-
-        {/* Brand + Category row */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {product.brand && <p className="text-slate-300">{product.brand}</p>}
-          {(product as any).category && (
-            <span className="ml-0 inline-flex items-center rounded-md border border-slate-700 bg-slate-800/70 px-2 py-0.5 text-xs text-slate-200">
-              {(product as any).category}
+          {product.category && (
+            <span className="inline-flex items-center rounded-md border border-slate-700 bg-slate-800/70 px-2 py-0.5 text-xs text-slate-200">
+              {product.category}
             </span>
           )}
         </div>
 
-        {/* Price row */}
         <div className="mb-6 flex items-baseline gap-2">
           <p className="text-2xl font-bold text-white">
             {formatCurrency(priceToUse)}
@@ -112,11 +121,9 @@ export default function ProductDetail({ product }: { product: Product }) {
           )}
         </div>
 
-        {/* Specs */}
         <h3 className="font-semibold text-white mb-2">Specifications</h3>
         <ul className="list-disc pl-5 text-slate-300 mb-6">{renderSpecs()}</ul>
 
-        {/* Qty + Buttons */}
         <div className="flex items-center gap-3">
           <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-800">
             <button
@@ -140,19 +147,7 @@ export default function ProductDetail({ product }: { product: Product }) {
             type="button"
             className="btn-primary"
             disabled={outOfStock}
-            onClick={() => {
-              add(
-                {
-                  id: product.id,
-                  name: product.name,
-                  price: priceToUse,
-                  image: img,
-                  slug: product.slug,
-                },
-                qty
-              );
-              toast(`Added ${qty} × “${product.name}”`);
-            }}
+            onClick={handleAddToCart}
           >
             {outOfStock ? "Unavailable" : "Add to Cart"}
           </button>
