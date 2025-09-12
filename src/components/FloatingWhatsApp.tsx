@@ -22,7 +22,7 @@ export default function FloatingWhatsApp({ phone, label, routes }: Props) {
       className="fixed bottom-6 right-6 flex items-center gap-2 z-50"
     >
       {/* WhatsApp logo */}
-      <div className="w-12 h-12 rounded-full shadow-lg bg-white flex items-center justify-center">
+      <div className="w-12 h-12 rounded-full shadow-lg bg-green-500 flex items-center justify-center">
         <Image
           src="/logo/whatsapp.png"
           alt="WhatsApp"
