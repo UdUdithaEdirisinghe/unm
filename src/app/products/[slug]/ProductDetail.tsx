@@ -6,9 +6,11 @@ import { useState } from "react";
 import { useCart } from "../../../components/cart/CartProvider";
 import type { Product } from "../../../lib/products";
 import { formatCurrency } from "../../../lib/format";
+import { useToast } from "../../../components/ui/ToastProvider";
 
 export default function ProductDetail({ product }: { product: Product }) {
   const { add } = useCart();
+  const toast = useToast();
   const [qty, setQty] = useState(1);
 
   const img =
@@ -36,7 +38,6 @@ export default function ProductDetail({ product }: { product: Product }) {
     const s: any = product.specs;
     if (!s) return null;
 
-    // Object → key/value pairs
     if (typeof s === "object" && !Array.isArray(s)) {
       const entries = Object.entries(s).filter(
         ([k, v]) => String(k).trim() && String(v ?? "").trim()
@@ -49,7 +50,6 @@ export default function ProductDetail({ product }: { product: Product }) {
       ));
     }
 
-    // Array → list items
     if (Array.isArray(s)) {
       return s.map((t: string, i: number) => <li key={i}>{t}</li>);
     }
@@ -90,7 +90,7 @@ export default function ProductDetail({ product }: { product: Product }) {
       <div>
         <h1 className="text-3xl font-bold mb-1 text-white">{product.name}</h1>
 
-        {/* Brand + Category */}
+        {/* Brand + Category row */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {product.brand && <p className="text-slate-300">{product.brand}</p>}
           {(product as any).category && (
@@ -140,7 +140,7 @@ export default function ProductDetail({ product }: { product: Product }) {
             type="button"
             className="btn-primary"
             disabled={outOfStock}
-            onClick={() =>
+            onClick={() => {
               add(
                 {
                   id: product.id,
@@ -150,8 +150,9 @@ export default function ProductDetail({ product }: { product: Product }) {
                   slug: product.slug,
                 },
                 qty
-              )
-            }
+              );
+              toast(`Added ${qty} × “${product.name}”`);
+            }}
           >
             {outOfStock ? "Unavailable" : "Add to Cart"}
           </button>

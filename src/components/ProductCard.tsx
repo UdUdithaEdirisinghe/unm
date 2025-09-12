@@ -5,11 +5,13 @@ import Link from "next/link";
 import { useCart } from "../components/cart/CartProvider";
 import type { Product } from "../lib/products";
 import { formatCurrency } from "../lib/format";
+import { useToast } from "./ui/ToastProvider";
 
 type Props = { product: Product };
 
 export default function ProductCard({ product }: Props) {
   const { add } = useCart();
+  const toast = useToast();
 
   const img =
     typeof product.image === "string" && product.image.trim()
@@ -24,11 +26,11 @@ export default function ProductCard({ product }: Props) {
   const hasSale =
     typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
 
-  const priceToUse = hasSale ? (salePrice as number) : product.price;
+  const priceToUse = hasSale ? salePrice : product.price;
 
   const discountPct =
     hasSale && salePrice
-      ? Math.round(((product.price - (salePrice as number)) / product.price) * 100)
+      ? Math.round(((product.price - salePrice) / product.price) * 100)
       : 0;
 
   return (
@@ -98,20 +100,23 @@ export default function ProductCard({ product }: Props) {
       {/* Add to cart */}
       <div className="mt-3">
         <button
-          className={`btn-primary w-full ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
+          className={`btn-primary w-full ${
+            outOfStock ? "opacity-50 cursor-not-allowed" : ""
+          }`}
           disabled={outOfStock}
-          onClick={() =>
+          onClick={() => {
             add(
               {
                 id: product.id,
                 name: product.name,
-                price: priceToUse,
+                price: priceToUse!,
                 image: img,
                 slug: product.slug,
               },
               1
-            )
-          }
+            );
+            toast(`Added “${product.name}” to cart`);
+          }}
         >
           {outOfStock ? "Unavailable" : "Add to Cart"}
         </button>
