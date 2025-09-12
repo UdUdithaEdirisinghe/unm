@@ -22,7 +22,7 @@ type Draft = {
   slug: string;
   image: string;
   brand: string;
-  category: string;           // ← NEW
+  category: string;           // category support
   shortDesc: string;
   stock: string;
   price: string;
@@ -35,7 +35,7 @@ const EMPTY: Draft = {
   slug: "",
   image: "",
   brand: "",
-  category: "",               // ← NEW
+  category: "",
   shortDesc: "",
   stock: "0",
   price: "",
@@ -80,6 +80,10 @@ export default function AdminPage() {
   const [orderFilter, setOrderFilter] = useState<OrderStatus | "all">("all");
   const [orderQuery, setOrderQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+
+  // NEW: product list filters
+  const [productQuery, setProductQuery] = useState("");
+  const [productCategory, setProductCategory] = useState<string>("all");
 
   /** Safe JSON fetch that always returns an array on success, [] on any error */
   async function safeGetArray<T = any>(url: string): Promise<T[]> {
@@ -158,7 +162,7 @@ export default function AdminPage() {
       slug: p.slug,
       image: p.image,
       brand: p.brand ?? "",
-      category: (p as any).category ?? "", // ← NEW
+      category: (p as any).category ?? "", // read category if present
       shortDesc: p.shortDesc ?? "",
       stock: String(p.stock ?? 0),
       price: String(p.price),
@@ -194,7 +198,7 @@ export default function AdminPage() {
       slug: draft.slug.trim(),
       image: img,
       brand: draft.brand.trim(),
-      category: draft.category.trim() || null, // ← NEW
+      category: draft.category.trim() || null, // send category
       shortDesc: draft.shortDesc.trim(),
       specs,
       stock: Number(draft.stock) || 0,
@@ -347,83 +351,235 @@ export default function AdminPage() {
   const filteredOrders = useMemo(() => {
     const q = orderQuery.trim();
     if (!q) return orders;
-    return orders.filter((o) => o.id.toLowerCase().includes(q.toLowerCase()));
+    return orders.filter((o) =>
+      o.id.toLowerCase().includes(q.toLowerCase())
+    );
   }, [orders, orderQuery]);
+
+  // ——— NEW: product filtering (by text + category) ———
+  const productCategories = useMemo(() => {
+    const set = new Set<string>();
+    products.forEach((p) => {
+      const c = (p as any).category?.toString().trim();
+      if (c) set.add(c);
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [products]);
+
+  const visibleProducts = useMemo(() => {
+    const q = productQuery.trim().toLowerCase();
+    const cat = productCategory;
+    return products.filter((p) => {
+      const matchesText =
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        (p.brand ?? "").toLowerCase().includes(q) ||
+        (p.slug ?? "").toLowerCase().includes(q);
+
+      const c = (p as any).category?.toString() ?? "";
+      const matchesCat = cat === "all" || c === cat;
+
+      return matchesText && matchesCat;
+    });
+  }, [products, productQuery, productCategory]);
 
   /* ——— UI ——— */
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-6">
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-bold">Admin</h1>
-        <button className="btn-ghost" onClick={logout}>Logout</button>
+        <button className="btn-ghost" onClick={logout}>
+          Logout
+        </button>
       </div>
 
-      {err && <div className="mb-3 rounded border border-rose-800/50 bg-rose-900/30 px-3 py-2 text-rose-100">{err}</div>}
-      {msg && <div className="mb-3 rounded border border-emerald-800/50 bg-emerald-900/30 px-3 py-2 text-emerald-100">{msg}</div>}
+      {err && (
+        <div className="mb-3 rounded border border-rose-800/50 bg-rose-900/30 px-3 py-2 text-rose-100">
+          {err}
+        </div>
+      )}
+      {msg && (
+        <div className="mb-3 rounded border border-emerald-800/50 bg-emerald-900/30 px-3 py-2 text-emerald-100">
+          {msg}
+        </div>
+      )}
 
       {/* PRODUCTS FORM */}
       <h2 className="mb-2 text-lg font-semibold">Products</h2>
-      <form onSubmit={save} className="grid grid-cols-1 gap-4 rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 md:grid-cols-2">
-        <input className="field" placeholder="Accessory name" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })}/>
-        <input className="field" placeholder="Slug (e.g. powerbank-10k)" value={draft.slug} onChange={(e) => setDraft({ ...draft, slug: e.target.value })}/>
+      <form
+        onSubmit={save}
+        className="grid grid-cols-1 gap-4 rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 md:grid-cols-2"
+      >
+        <input
+          className="field"
+          placeholder="Accessory name"
+          value={draft.name}
+          onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+        />
+        <input
+          className="field"
+          placeholder="Slug (e.g. powerbank-10k)"
+          value={draft.slug}
+          onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
+        />
 
         <div className="flex gap-2 md:col-span-2">
-          <input className="field flex-1" placeholder="Image path (auto after upload)" value={draft.image} onChange={(e) => setDraft({ ...draft, image: e.target.value })}/>
+          <input
+            className="field flex-1"
+            placeholder="Image path (auto after upload)"
+            value={draft.image}
+            onChange={(e) => setDraft({ ...draft, image: e.target.value })}
+          />
           <label className="btn-secondary cursor-pointer">
             Upload
-            <input type="file" accept="image/*" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImage(f).catch(er => setErr(er.message)); }} />
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadImage(f).catch((er) => setErr(er.message));
+              }}
+            />
           </label>
         </div>
 
-        <input className="field" placeholder="Brand (e.g. Baseus, Anker)" value={draft.brand} onChange={(e) => setDraft({ ...draft, brand: e.target.value })}/>
-        <input className="field" placeholder="Category (e.g. Power Banks)" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value })}/> {/* ← NEW */}
-        <textarea className="textarea md:col-span-2" placeholder="Short description" value={draft.shortDesc} onChange={(e) => setDraft({ ...draft, shortDesc: e.target.value })}/>
+        <input
+          className="field"
+          placeholder="Brand (e.g. Baseus, Anker)"
+          value={draft.brand}
+          onChange={(e) => setDraft({ ...draft, brand: e.target.value })}
+        />
+        <input
+          className="field"
+          placeholder="Category (e.g. Power Banks)"
+          value={draft.category}
+          onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+        />
+        <textarea
+          className="textarea md:col-span-2"
+          placeholder="Short description"
+          value={draft.shortDesc}
+          onChange={(e) => setDraft({ ...draft, shortDesc: e.target.value })}
+        />
 
         {/* Dynamic specs */}
         <div className="md:col-span-2 rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.35)] p-3">
           <div className="mb-2 flex items-center justify-between">
             <div className="font-semibold text-slate-200">Specifications</div>
-            <button type="button" className="btn-secondary" onClick={addSpecRow}>+ Add spec</button>
+            <button type="button" className="btn-secondary" onClick={addSpecRow}>
+              + Add spec
+            </button>
           </div>
           <div className="space-y-2">
             {draft.specsRows.map((row, i) => (
-              <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr,1fr,auto]">
-                <input className="field" placeholder="Label (e.g. Capacity)" value={row.key} onChange={(e) => updateSpecRow(i, "key", e.target.value)}/>
-                <input className="field" placeholder="Value (e.g. 10,000 mAh)" value={row.value} onChange={(e) => updateSpecRow(i, "value", e.target.value)}/>
-                <button type="button" className="btn-ghost text-rose-300 hover:text-rose-200" onClick={() => removeSpecRow(i)}>Remove</button>
+              <div
+                key={i}
+                className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr,1fr,auto]"
+              >
+                <input
+                  className="field"
+                  placeholder="Label (e.g. Capacity)"
+                  value={row.key}
+                  onChange={(e) => updateSpecRow(i, "key", e.target.value)}
+                />
+                <input
+                  className="field"
+                  placeholder="Value (e.g. 10,000 mAh)"
+                  value={row.value}
+                  onChange={(e) => updateSpecRow(i, "value", e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="btn-ghost text-rose-300 hover:text-rose-200"
+                  onClick={() => removeSpecRow(i)}
+                >
+                  Remove
+                </button>
               </div>
             ))}
-            <p className="text-xs text-slate-400">Tip: Capacity, Output, Color, Ports, Warranty…</p>
+            <p className="text-xs text-slate-400">
+              Tip: Capacity, Output, Color, Ports, Warranty…
+            </p>
           </div>
         </div>
 
-        <input className="field" placeholder="Stock" inputMode="numeric" value={draft.stock} onChange={(e) => setDraft({ ...draft, stock: e.target.value })}/>
-        <input className="field" placeholder="Price (LKR)" inputMode="numeric" value={draft.price} onChange={(e) => setDraft({ ...draft, price: e.target.value })}/>
-        <input className="field" placeholder="Sale price (optional)" inputMode="numeric" value={draft.salePrice} onChange={(e) => setDraft({ ...draft, salePrice: e.target.value })}/>
+        <input
+          className="field"
+          placeholder="Stock"
+          inputMode="numeric"
+          value={draft.stock}
+          onChange={(e) => setDraft({ ...draft, stock: e.target.value })}
+        />
+        <input
+          className="field"
+          placeholder="Price (LKR)"
+          inputMode="numeric"
+          value={draft.price}
+          onChange={(e) => setDraft({ ...draft, price: e.target.value })}
+        />
+        <input
+          className="field"
+          placeholder="Sale price (optional)"
+          inputMode="numeric"
+          value={draft.salePrice}
+          onChange={(e) => setDraft({ ...draft, salePrice: e.target.value })}
+        />
 
         <div className="md:col-span-2 mt-2 flex items-center justify-end gap-2">
-          {draft.id && <button type="button" className="btn-ghost" onClick={reset}>New</button>}
-          <button type="submit" className="btn-primary" disabled={saving}>{savingText}</button>
+          {draft.id && (
+            <button type="button" className="btn-ghost" onClick={reset}>
+              New
+            </button>
+          )}
+          <button type="submit" className="btn-primary" disabled={saving}>
+            {savingText}
+          </button>
         </div>
       </form>
 
-      {/* PRODUCTS LIST */}
+      {/* PRODUCTS LIST + filters (category + text) */}
       <div className="mt-6 rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4">
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-lg font-semibold">Products</div>
-          <button className="btn-ghost" onClick={load} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button>
+
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input
+              className="field w-full sm:w-60"
+              placeholder="Search name / brand / slug"
+              value={productQuery}
+              onChange={(e) => setProductQuery(e.target.value)}
+            />
+            <select
+              className="field w-full sm:w-56"
+              value={productCategory}
+              onChange={(e) => setProductCategory(e.target.value)}
+              title="Filter by category"
+            >
+              <option value="all">All categories</option>
+              {productCategories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <button className="btn-ghost" onClick={load} disabled={loading}>
+              {loading ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
         </div>
 
-        {products.length === 0 ? (
-          <p className="text-sm text-slate-400">No products yet.</p>
+        {visibleProducts.length === 0 ? (
+          <p className="text-sm text-slate-400">No products.</p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {products.map((p) => {
-              const onSale = p.salePrice && p.salePrice > 0 && p.salePrice < p.price;
+            {visibleProducts.map((p) => {
+              const onSale =
+                p.salePrice && p.salePrice > 0 && p.salePrice < p.price;
               const cat = (p as any).category || "";
               return (
-                <div key={p.id} className="flex items-center justify-between rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)] p-3">
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)] p-3"
+                >
                   <div className="min-w-0">
                     <div className="truncate font-medium">{p.name}</div>
                     <div className="text-xs text-slate-400 truncate">
@@ -432,20 +588,33 @@ export default function AdminPage() {
                     <div className="mt-1 flex items-center gap-2">
                       {onSale ? (
                         <>
-                          <span className="text-xs text-slate-400 line-through">{fmtLKR(p.price)}</span>
+                          <span className="text-xs text-slate-400 line-through">
+                            {fmtLKR(p.price)}
+                          </span>
                           <span className="inline-flex items-center rounded-full bg-indigo-800 px-2 py-0.5 text-xs text-indigo-100">
                             {fmtLKR(p.salePrice!)}
                           </span>
                         </>
                       ) : (
-                        <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-200">{fmtLKR(p.price)}</span>
+                        <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-200">
+                          {fmtLKR(p.price)}
+                        </span>
                       )}
-                      <span className="text-xs text-slate-400">• Stock {p.stock ?? 0}</span>
+                      <span className="text-xs text-slate-400">
+                        • Stock {p.stock ?? 0}
+                      </span>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <button className="btn-secondary" onClick={() => edit(p)}>Edit</button>
-                    <button className="btn-ghost text-rose-400 hover:text-rose-300" onClick={() => del(p.id)}>Delete</button>
+                    <button className="btn-secondary" onClick={() => edit(p)}>
+                      Edit
+                    </button>
+                    <button
+                      className="btn-ghost text-rose-400 hover:text-rose-300"
+                      onClick={() => del(p.id)}
+                    >
+                      Delete
+                    </button>
                   </div>
                 </div>
               );
@@ -456,26 +625,88 @@ export default function AdminPage() {
 
       {/* PROMOTIONS */}
       <h2 className="mt-10 mb-2 text-lg font-semibold">Promotions</h2>
-      {pErr && <div className="mb-3 rounded border border-rose-800/50 bg-rose-900/30 px-3 py-2 text-rose-100">{pErr}</div>}
-      {pMsg && <div className="mb-3 rounded border border-emerald-800/50 bg-emerald-900/30 px-3 py-2 text-emerald-100">{pMsg}</div>}
+      {pErr && (
+        <div className="mb-3 rounded border border-rose-800/50 bg-rose-900/30 px-3 py-2 text-rose-100">
+          {pErr}
+        </div>
+      )}
+      {pMsg && (
+        <div className="mb-3 rounded border border-emerald-800/50 bg-emerald-900/30 px-3 py-2 text-emerald-100">
+          {pMsg}
+        </div>
+      )}
 
-      <form onSubmit={savePromo} className="grid grid-cols-1 gap-3 rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 md:grid-cols-4">
-        <input className="field md:col-span-1" placeholder="CODE (UPPERCASE)" value={pDraft.code} onChange={(e) => setPDraft({ ...pDraft, code: e.target.value.toUpperCase() })}/>
-        <select className="field" value={pDraft.type} onChange={(e) => setPDraft({ ...pDraft, type: e.target.value as any })}>
+      <form
+        onSubmit={savePromo}
+        className="grid grid-cols-1 gap-3 rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 md:grid-cols-4"
+      >
+        <input
+          className="field md:col-span-1"
+          placeholder="CODE (UPPERCASE)"
+          value={pDraft.code}
+          onChange={(e) =>
+            setPDraft({ ...pDraft, code: e.target.value.toUpperCase() })
+          }
+        />
+        <select
+          className="field"
+          value={pDraft.type}
+          onChange={(e) => setPDraft({ ...pDraft, type: e.target.value as any })}
+        >
           <option value="percent">Percent %</option>
           <option value="fixed">Fixed (LKR)</option>
           <option value="freeShipping">Free shipping</option>
         </select>
-        <input className="field" placeholder={pDraft.type === "percent" ? "% (e.g. 10)" : pDraft.type === "fixed" ? "Amount (LKR)" : "N/A"} value={pDraft.value} onChange={(e) => setPDraft({ ...pDraft, value: e.target.value })} disabled={pDraft.type === "freeShipping"}/>
+        <input
+          className="field"
+          placeholder={
+            pDraft.type === "percent"
+              ? "% (e.g. 10)"
+              : pDraft.type === "fixed"
+              ? "Amount (LKR)"
+              : "N/A"
+          }
+          value={pDraft.value}
+          onChange={(e) => setPDraft({ ...pDraft, value: e.target.value })}
+          disabled={pDraft.type === "freeShipping"}
+        />
         <label className="field flex items-center gap-2">
-          <input type="checkbox" checked={pDraft.enabled} onChange={(e) => setPDraft({ ...pDraft, enabled: e.target.checked })}/>
+          <input
+            type="checkbox"
+            checked={pDraft.enabled}
+            onChange={(e) =>
+              setPDraft({ ...pDraft, enabled: e.target.checked })
+            }
+          />
           <span>Enabled</span>
         </label>
-        <input type="date" className="field" value={pDraft.startsAt} onChange={(e) => setPDraft({ ...pDraft, startsAt: e.target.value })}/>
-        <input type="date" className="field" value={pDraft.endsAt} onChange={(e) => setPDraft({ ...pDraft, endsAt: e.target.value })}/>
+        <input
+          type="date"
+          className="field"
+          value={pDraft.startsAt}
+          onChange={(e) => setPDraft({ ...pDraft, startsAt: e.target.value })}
+        />
+        <input
+          type="date"
+          className="field"
+          value={pDraft.endsAt}
+          onChange={(e) => setPDraft({ ...pDraft, endsAt: e.target.value })}
+        />
         <div className="md:col-span-4 flex items-center justify-end gap-2">
-          <button type="button" className="btn-ghost" onClick={() => { setPDraft(EMPTY_PROMO); setPMsg(null); setPErr(null); }}>New</button>
-          <button type="submit" className="btn-primary" disabled={pSaving}>{pSaving ? "Saving…" : "Save promo"}</button>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => {
+              setPDraft(EMPTY_PROMO);
+              setPMsg(null);
+              setPErr(null);
+            }}
+          >
+          New
+          </button>
+          <button type="submit" className="btn-primary" disabled={pSaving}>
+            {pSaving ? "Saving…" : "Save promo"}
+          </button>
         </div>
       </form>
 
@@ -485,21 +716,33 @@ export default function AdminPage() {
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {promos.map((pm) => (
-              <div key={pm.code} className="flex items-center justify-between rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)] p-3">
+              <div
+                key={pm.code}
+                className="flex items-center justify-between rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)] p-3"
+              >
                 <div className="min-w-0">
                   <div className="font-medium">{pm.code}</div>
                   <div className="text-xs text-slate-400 truncate">
                     {pm.type === "percent" && `Discount: ${pm.value}%`}
                     {pm.type === "fixed" && `Discount: LKR ${pm.value}`}
                     {pm.type === "freeShipping" && `Free shipping`}
-                    {pm.startsAt && ` • From ${new Date(pm.startsAt).toLocaleDateString()}`}
-                    {pm.endsAt && ` • Until ${new Date(pm.endsAt).toLocaleDateString()}`}
+                    {pm.startsAt &&
+                      ` • From ${new Date(pm.startsAt).toLocaleDateString()}`}
+                    {pm.endsAt &&
+                      ` • Until ${new Date(pm.endsAt).toLocaleDateString()}`}
                     {pm.enabled ? " • Enabled" : " • Disabled"}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <button className="btn-secondary" onClick={() => editPromo(pm)}>Edit</button>
-                  <button className="btn-ghost text-rose-400 hover:text-rose-300" onClick={() => deletePromo(pm.code)}>Delete</button>
+                  <button className="btn-secondary" onClick={() => editPromo(pm)}>
+                    Edit
+                  </button>
+                  <button
+                    className="btn-ghost text-rose-400 hover:text-rose-300"
+                    onClick={() => deletePromo(pm.code)}
+                  >
+                    Delete
+                  </button>
                 </div>
               </div>
             ))}
@@ -511,7 +754,11 @@ export default function AdminPage() {
       <h2 className="mt-10 mb-2 text-lg font-semibold">Orders</h2>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <span className="text-sm text-slate-300">Filter:</span>
-        <select className="field" value={orderFilter} onChange={(e) => setOrderFilter(e.target.value as any)}>
+        <select
+          className="field"
+          value={orderFilter}
+          onChange={(e) => setOrderFilter(e.target.value as any)}
+        >
           <option value="all">All</option>
           <option value="pending">Pending</option>
           <option value="paid">Paid</option>
@@ -520,7 +767,12 @@ export default function AdminPage() {
           <option value="cancelled">Cancelled</option>
         </select>
 
-        <input className="field w-48" placeholder="Search order #" value={orderQuery} onChange={(e) => setOrderQuery(e.target.value)} />
+        <input
+          className="field w-48"
+          placeholder="Search order #"
+          value={orderQuery}
+          onChange={(e) => setOrderQuery(e.target.value)}
+        />
 
         <button className="btn-ghost" onClick={load} disabled={loading}>
           {loading ? "Refreshing…" : "Refresh"}
@@ -535,12 +787,16 @@ export default function AdminPage() {
             {filteredOrders.map((o) => {
               const open = expanded === o.id;
               return (
-                <div key={o.id} className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)] p-3">
+                <div
+                  key={o.id}
+                  className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)] p-3"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="min-w-0">
                       <div className="font-medium">#{o.id}</div>
                       <div className="text-xs text-slate-400">
-                        {new Date(o.createdAt).toLocaleString()} • {o.customer.firstName} {o.customer.lastName}
+                        {new Date(o.createdAt).toLocaleString()} •{" "}
+                        {o.customer.firstName} {o.customer.lastName}
                       </div>
                     </div>
 
@@ -548,15 +804,26 @@ export default function AdminPage() {
                       <span className="inline-flex items-center rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-200">
                         {fmtLKR(o.total)}
                       </span>
-                      <select className="field" value={o.status} onChange={(e) => setOrderStatus(o.id, e.target.value as any)}>
+                      <select
+                        className="field"
+                        value={o.status}
+                        onChange={(e) =>
+                          setOrderStatus(o.id, e.target.value as any)
+                        }
+                      >
                         <option value="pending">Pending</option>
                         <option value="paid">Paid</option>
                         <option value="shipped">Shipped</option>
                         <option value="completed">Completed</option>
                         <option value="cancelled">Cancelled</option>
                       </select>
-                      <Link className="btn-secondary" href={`/admin/orders/${o.id}`}>Details</Link>
-                      <button className="btn-ghost" onClick={() => setExpanded(open ? null : o.id)}>
+                      <Link className="btn-secondary" href={`/admin/orders/${o.id}`}>
+                        Details
+                      </Link>
+                      <button
+                        className="btn-ghost"
+                        onClick={() => setExpanded(open ? null : o.id)}
+                      >
                         {open ? "Hide" : "Quick view"}
                       </button>
                     </div>
@@ -567,19 +834,37 @@ export default function AdminPage() {
                       <div className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.3)] p-3">
                         <div className="font-semibold mb-1">Customer</div>
                         <div className="text-sm text-slate-300">
-                          {o.customer.firstName} {o.customer.lastName}<br />
-                          {o.customer.email}<br />
-                          {o.customer.phone || "No phone"}<br />
-                          {o.customer.address}, {o.customer.city} {o.customer.postal || ""}
+                          {o.customer.firstName} {o.customer.lastName}
+                          <br />
+                          {o.customer.email}
+                          <br />
+                          {o.customer.phone || "No phone"}
+                          <br />
+                          {o.customer.address}, {o.customer.city}{" "}
+                          {o.customer.postal || ""}
                         </div>
                         {(o.customer as any).shipToDifferent && (
                           <div className="mt-3">
-                            <div className="font-semibold mb-1">Ship to (different)</div>
+                            <div className="font-semibold mb-1">
+                              Ship to (different)
+                            </div>
                             <div className="text-sm text-slate-300">
                               {(() => {
                                 const s: any = (o.customer as any).shipToDifferent;
-                                const name = s.name || [s.firstName, s.lastName].filter(Boolean).join(" ");
-                                return (<>{name}<br/>{s.phone}<br/>{s.address}, {s.city} {s.postal || ""}</>);
+                                const name =
+                                  s.name ||
+                                  [s.firstName, s.lastName]
+                                    .filter(Boolean)
+                                    .join(" ");
+                                return (
+                                  <>
+                                    {name}
+                                    <br />
+                                    {s.phone}
+                                    <br />
+                                    {s.address}, {s.city} {s.postal || ""}
+                                  </>
+                                );
                               })()}
                             </div>
                           </div>
@@ -589,19 +874,42 @@ export default function AdminPage() {
                       <div className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.3)] p-3">
                         <div className="font-semibold mb-1">Items</div>
                         <ul className="text-sm text-slate-300 list-disc pl-5">
-                          {o.items.map((it) => <li key={it.id}>{it.name} × {it.quantity}</li>)}
+                          {o.items.map((it) => (
+                            <li key={it.id}>
+                              {it.name} × {it.quantity}
+                            </li>
+                          ))}
                         </ul>
                         <div className="mt-2 text-sm text-slate-300">
-                          Subtotal: {fmtLKR(o.subtotal)}<br/>
-                          {o.promoCode && <>Promo ({o.promoCode}): −{fmtLKR(o.promoDiscount ?? 0)}<br/></>}
-                          Shipping: {fmtLKR(o.shipping)}{o.freeShipping ? " (free)" : ""}<br/>
-                          <span className="font-semibold">Total: {fmtLKR(o.total)}</span>
+                          Subtotal: {fmtLKR(o.subtotal)}
+                          <br />
+                          {o.promoCode && (
+                            <>
+                              Promo ({o.promoCode}): −
+                              {fmtLKR(o.promoDiscount ?? 0)}
+                              <br />
+                            </>
+                          )}
+                          Shipping: {fmtLKR(o.shipping)}
+                          {o.freeShipping ? " (free)" : ""}
+                          <br />
+                          <span className="font-semibold">
+                            Total: {fmtLKR(o.total)}
+                          </span>
                         </div>
                         {o.paymentMethod === "BANK" && (
                           <div className="mt-2 text-sm text-slate-300">
-                            Payment: Direct bank transfer<br/>
+                            Payment: Direct bank transfer
+                            <br />
                             {o.bankSlipUrl ? (
-                              <a className="text-brand-accent hover:underline" href={o.bankSlipUrl} target="_blank" rel="noreferrer">View bank slip</a>
+                              <a
+                                className="text-brand-accent hover:underline"
+                                href={o.bankSlipUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                View bank slip
+                              </a>
                             ) : (
                               <>Bank slip: {o.bankSlipName || "—"}</>
                             )}
