@@ -1,4 +1,3 @@
-// src/app/products/[slug]/ProductDetail.tsx (or wherever you render this)
 "use client";
 
 import Image from "next/image";
@@ -37,7 +36,7 @@ export default function ProductDetail({ product }: { product: Product }) {
     const s: any = product.specs;
     if (!s) return null;
 
-    // If specs is an object → key/value pairs
+    // Object → key/value pairs
     if (typeof s === "object" && !Array.isArray(s)) {
       const entries = Object.entries(s).filter(
         ([k, v]) => String(k).trim() && String(v ?? "").trim()
@@ -50,7 +49,7 @@ export default function ProductDetail({ product }: { product: Product }) {
       ));
     }
 
-    // If specs is an array → list items
+    // Array → list items
     if (Array.isArray(s)) {
       return s.map((t: string, i: number) => <li key={i}>{t}</li>);
     }
@@ -91,14 +90,12 @@ export default function ProductDetail({ product }: { product: Product }) {
       <div>
         <h1 className="text-3xl font-bold mb-1 text-white">{product.name}</h1>
 
-        {/* Brand + Category row */}
+        {/* Brand + Category */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
-          {product.brand && (
-            <p className="text-slate-300">{product.brand}</p>
-          )}
-          {product.category && (
+          {product.brand && <p className="text-slate-300">{product.brand}</p>}
+          {(product as any).category && (
             <span className="ml-0 inline-flex items-center rounded-md border border-slate-700 bg-slate-800/70 px-2 py-0.5 text-xs text-slate-200">
-              {product.category}
+              {(product as any).category}
             </span>
           )}
         </div>

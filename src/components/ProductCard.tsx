@@ -24,11 +24,11 @@ export default function ProductCard({ product }: Props) {
   const hasSale =
     typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
 
-  const priceToUse = hasSale ? salePrice : product.price;
+  const priceToUse = hasSale ? (salePrice as number) : product.price;
 
   const discountPct =
     hasSale && salePrice
-      ? Math.round(((product.price - salePrice) / product.price) * 100)
+      ? Math.round(((product.price - (salePrice as number)) / product.price) * 100)
       : 0;
 
   return (
@@ -98,9 +98,7 @@ export default function ProductCard({ product }: Props) {
       {/* Add to cart */}
       <div className="mt-3">
         <button
-          className={`btn-primary w-full ${
-            outOfStock ? "opacity-50 cursor-not-allowed" : ""
-          }`}
+          className={`btn-primary w-full ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
           disabled={outOfStock}
           onClick={() =>
             add(

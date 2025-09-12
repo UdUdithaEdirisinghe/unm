@@ -15,20 +15,19 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Footer />
 
           {/* WhatsApp bubble: visible only on selected routes.
-             - Mobile: just the round button
-             - Desktop: button + "Need help?" label */}
+              NOTE: No wildcard is required; product details also start with "/products". */}
           <FloatingWhatsApp
             phone="+94760703523"
             label="Need Help? Chat with us"
             routes={[
-              "/",            // Home (exact)
-              "/products",    // List
-              "/products/*",  // Product detail
+              "/",          // Home
+              "/products",  // Listing + details
               "/about",
               "/contact",
               "/policies",
               "/faq",
               "/facts",
+              "/cart",
             ]}
           />
         </CartProvider>
