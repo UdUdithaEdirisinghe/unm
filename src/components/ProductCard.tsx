@@ -97,18 +97,16 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* fixed-height price row */}
-      <div className="mt-2 flex items-baseline gap-2 min-h-[32px]">
+      {/* price block → stacked on mobile, inline on desktop */}
+      <div className="mt-2 flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
         <p className="text-lg font-semibold text-white">
           {formatCurrency(priceToUse)}
         </p>
-        <span
-          className={`text-sm text-slate-400 line-through ${
-            hasSale ? "inline" : "invisible"
-          }`}
-        >
-          {formatCurrency(product.price)}
-        </span>
+        {hasSale && (
+          <span className="text-sm text-slate-400 line-through">
+            {formatCurrency(product.price)}
+          </span>
+        )}
       </div>
 
       {/* button */}
