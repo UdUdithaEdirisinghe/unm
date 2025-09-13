@@ -65,7 +65,7 @@ export default function Navbar() {
             </svg>
           </button>
           <Link href="/" className="flex items-center gap-2">
-            <img src="/logo/manny-logo.png" alt="Manny.lk" className="h-8 w-auto" />
+            <img src="/logo/manny-logo.png" alt="Manny.lk" className="h-12 w-auto" />
           </Link>
         </div>
 
