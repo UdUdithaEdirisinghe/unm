@@ -1,3 +1,4 @@
+// src/app/admin/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -22,7 +23,7 @@ type Draft = {
   slug: string;
   image: string;
   brand: string;
-  category: string;           // category support
+  category: string;
   shortDesc: string;
   stock: string;
   price: string;
@@ -162,7 +163,7 @@ export default function AdminPage() {
       slug: p.slug,
       image: p.image,
       brand: p.brand ?? "",
-      category: (p as any).category ?? "", // read category if present
+      category: (p as any).category ?? "",
       shortDesc: p.shortDesc ?? "",
       stock: String(p.stock ?? 0),
       price: String(p.price),
@@ -198,7 +199,7 @@ export default function AdminPage() {
       slug: draft.slug.trim(),
       image: img,
       brand: draft.brand.trim(),
-      category: draft.category.trim() || null, // send category
+      category: draft.category.trim() || null,
       shortDesc: draft.shortDesc.trim(),
       specs,
       stock: Number(draft.stock) || 0,
@@ -258,13 +259,14 @@ export default function AdminPage() {
     }
   }
 
+  // ✅ only change: call the upload API with kind=product
   async function uploadImage(file: File) {
     const fd = new FormData();
     fd.append("file", file);
-    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const r = await fetch("/api/upload?kind=product", { method: "POST", body: fd });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data?.error || "Upload failed");
-    setDraft((d) => ({ ...d, image: data.path }));
+    setDraft((d) => ({ ...d, image: data.path || data.url }));
   }
 
   async function logout() {
@@ -538,7 +540,7 @@ export default function AdminPage() {
         </div>
       </form>
 
-      {/* PRODUCTS LIST + filters (category + text) */}
+      {/* PRODUCTS LIST + filters */}
       <div className="mt-6 rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4">
         <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-lg font-semibold">Products</div>
@@ -702,7 +704,7 @@ export default function AdminPage() {
               setPErr(null);
             }}
           >
-          New
+            New
           </button>
           <button type="submit" className="btn-primary" disabled={pSaving}>
             {pSaving ? "Saving…" : "Save promo"}
