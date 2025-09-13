@@ -61,7 +61,7 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* image area with fixed aspect */}
+      {/* image area */}
       <Link
         href={`/products/${product.slug}`}
         className="block rounded-md overflow-hidden border border-slate-800/60 bg-[rgba(10,15,28,0.4)]"
@@ -97,19 +97,21 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* price area fixed spacing */}
-      <div className="mt-2 flex items-baseline gap-2 min-h-[28px]">
+      {/* fixed-height price row */}
+      <div className="mt-2 flex items-baseline gap-2 min-h-[32px]">
         <p className="text-lg font-semibold text-white">
           {formatCurrency(priceToUse)}
         </p>
-        {hasSale && (
-          <span className="text-sm text-slate-400 line-through">
-            {formatCurrency(product.price)}
-          </span>
-        )}
+        <span
+          className={`text-sm text-slate-400 line-through ${
+            hasSale ? "inline" : "invisible"
+          }`}
+        >
+          {formatCurrency(product.price)}
+        </span>
       </div>
 
-      {/* button fixed at bottom */}
+      {/* button */}
       <div className="mt-3">
         <button
           className={`btn-primary w-full ${
