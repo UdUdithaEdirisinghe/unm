@@ -1,4 +1,3 @@
-// src/app/api/products/[id]/route.ts
 import { NextResponse } from "next/server";
 import { updateProduct, deleteProduct, type Product } from "../../../../lib/products";
 
@@ -10,24 +9,23 @@ const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 /* PUT /api/products/[id] — update */
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   try {
-    const patch = (await req.json()) as Partial<Product>;
+    const patch = (await req.json()) as Partial<Product> & { images?: string[] };
 
-    // Normalize fields similarly to lib behavior
+    // Normalize strings
     if (typeof patch.name === "string") patch.name = patch.name.trim();
     if (typeof patch.slug === "string") patch.slug = patch.slug.trim();
-    if (typeof patch.image === "string") {
-      const raw = patch.image.trim();
-      patch.image =
-        raw.startsWith("/") || /^https?:\/\//i.test(raw) ? raw : `/${raw}`;
-    }
+
+    // Normalize numeric
     if (patch.price != null) patch.price = Number(patch.price);
-    if (patch.salePrice === undefined) {
-      // keep as-is in lib; do nothing
-    } else {
-      patch.salePrice =
-        patch.salePrice === null ? null : Number(patch.salePrice);
+    if (patch.salePrice !== undefined) {
+      patch.salePrice = patch.salePrice === null ? null : Number(patch.salePrice);
     }
     if (patch.stock != null) patch.stock = Number(patch.stock);
+
+    // Normalize images array if present
+    if (patch.images && !Array.isArray(patch.images)) {
+      patch.images = [String(patch.images)];
+    }
 
     const updated = await updateProduct(params.id, patch);
     if (!updated) return j({ error: "Not found" }, 404);
@@ -37,8 +35,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   }
 }
 
-/* DELETE /api/products/[id] — delete */
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
+/* DELETE /api/products/[id] */
+export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
   try {
     await deleteProduct(params.id);
     return j({ ok: true });

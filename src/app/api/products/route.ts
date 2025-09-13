@@ -1,4 +1,3 @@
-// src/app/api/products/route.ts
 import { NextResponse } from "next/server";
 import { getProducts, createProduct, type Product } from "../../../lib/products";
 
@@ -20,30 +19,37 @@ export async function GET() {
 /* POST /api/products */
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as Partial<Product>;
+    const body = (await req.json()) as Partial<Product> & { images?: string[] };
 
     const name = (body.name ?? "").toString().trim();
     const slug = (body.slug ?? "").toString().trim();
-    const image = (body.image ?? "").toString().trim();
     const price = Number(body.price);
-    const salePrice =
-      body.salePrice === null || body.salePrice === undefined
-        ? null
-        : Number(body.salePrice);
     const stock = Number(body.stock ?? 0);
 
-    if (!name || !slug || !image || !Number.isFinite(price)) {
-      return j({ error: "Missing required fields: name, slug, image, or price." }, 400);
+    // images: prefer array; fallback to single image
+    const images = Array.isArray(body.images)
+      ? body.images
+      : (body.image ? [body.image] : []);
+
+    if (!name || !slug || !Number.isFinite(price) || images.length === 0) {
+      return j(
+        { error: "Missing required fields: name, slug, price, images." },
+        400
+      );
     }
 
     const created = await createProduct({
       name,
       slug,
-      image: image.startsWith("/") || /^https?:\/\//i.test(image) ? image : `/${image}`,
+      images,
       price,
-      salePrice,
+      salePrice:
+        body.salePrice === null || body.salePrice === undefined
+          ? null
+          : Number(body.salePrice),
       shortDesc: body.shortDesc ?? null,
       brand: body.brand ?? null,
+      category: body.category ?? null,
       specs: (body.specs as Record<string, string> | null) ?? null,
       stock: Number.isFinite(stock) ? stock : 0,
     });

@@ -1,4 +1,3 @@
-// src/app/admin/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -21,7 +20,7 @@ type Draft = {
   id?: string;
   name: string;
   slug: string;
-  image: string;
+  images: string[];          // NEW: multiple images (first = primary)
   brand: string;
   category: string;
   shortDesc: string;
@@ -34,7 +33,7 @@ type Draft = {
 const EMPTY: Draft = {
   name: "",
   slug: "",
-  image: "",
+  images: [],
   brand: "",
   category: "",
   shortDesc: "",
@@ -82,7 +81,7 @@ export default function AdminPage() {
   const [orderQuery, setOrderQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  // NEW: product list filters
+  // product list filters
   const [productQuery, setProductQuery] = useState("");
   const [productCategory, setProductCategory] = useState<string>("all");
 
@@ -161,7 +160,7 @@ export default function AdminPage() {
       id: p.id,
       name: p.name,
       slug: p.slug,
-      image: p.image,
+      images: (p.images && p.images.length ? p.images : [p.image]).slice(),
       brand: p.brand ?? "",
       category: (p as any).category ?? "",
       shortDesc: p.shortDesc ?? "",
@@ -180,8 +179,12 @@ export default function AdminPage() {
   }
 
   function bodyFromDraft(): any {
-    let img = draft.image.trim();
-    if (img && !/^https?:\/\//i.test(img) && !img.startsWith("/")) img = `/${img}`;
+    // sanitize & absolute-ify
+    const imgs = draft.images
+      .map((s) => String(s || "").trim())
+      .filter(Boolean)
+      .map((s) => (s.startsWith("/") || /^https?:\/\//i.test(s) ? s : `/${s}`));
+
     const price = Number(draft.price);
     const sale = draft.salePrice.trim() ? Number(draft.salePrice) : undefined;
 
@@ -197,7 +200,8 @@ export default function AdminPage() {
       id: draft.id,
       name: draft.name.trim(),
       slug: draft.slug.trim(),
-      image: img,
+      image: imgs[0] || "",   // legacy single image for compatibility
+      images: imgs,           // NEW multi
       brand: draft.brand.trim(),
       category: draft.category.trim() || null,
       shortDesc: draft.shortDesc.trim(),
@@ -215,8 +219,16 @@ export default function AdminPage() {
     setMsg(null);
     try {
       const body = bodyFromDraft();
-      if (!body.name || !body.slug || !body.image || !Number.isFinite(body.price)) {
-        throw new Error("Please fill name, slug, image and a valid price.");
+      if (
+        !body.name ||
+        !body.slug ||
+        !Number.isFinite(body.price) ||
+        !Array.isArray(body.images) ||
+        body.images.length === 0
+      ) {
+        throw new Error(
+          "Please fill name, slug, a valid price, and add at least one image."
+        );
       }
       const method = body.id ? "PUT" : "POST";
       const url = body.id ? `/api/products/${body.id}` : "/api/products";
@@ -259,14 +271,40 @@ export default function AdminPage() {
     }
   }
 
-  // ✅ only change: call the upload API with kind=product
-  async function uploadImage(file: File) {
-    const fd = new FormData();
-    fd.append("file", file);
-    const r = await fetch("/api/upload?kind=product", { method: "POST", body: fd });
-    const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(data?.error || "Upload failed");
-    setDraft((d) => ({ ...d, image: data.path || data.url }));
+  // MULTI upload (product images)
+  async function uploadImages(files: FileList | null) {
+    if (!files || !files.length) return;
+    const added: string[] = [];
+    for (const f of Array.from(files)) {
+      const fd = new FormData();
+      fd.append("file", f);
+      const r = await fetch("/api/upload?kind=product", {
+        method: "POST",
+        body: fd,
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data?.error || "Upload failed");
+      if (data.path) added.push(data.path);
+    }
+    if (added.length) {
+      setDraft((d) => ({ ...d, images: [...d.images, ...added] }));
+    }
+  }
+  function removeImage(i: number) {
+    setDraft((d) => {
+      const next = d.images.slice();
+      next.splice(i, 1);
+      return { ...d, images: next };
+    });
+  }
+  function makePrimary(i: number) {
+    setDraft((d) => {
+      if (i <= 0 || i >= d.images.length) return d;
+      const next = d.images.slice();
+      const [img] = next.splice(i, 1);
+      next.unshift(img);
+      return { ...d, images: next };
+    });
   }
 
   async function logout() {
@@ -276,7 +314,7 @@ export default function AdminPage() {
 
   const savingText = useMemo(() => (saving ? "Saving…" : "Save"), [saving]);
 
-  /* promo handlers (unchanged) */
+  /* PROMOS (unchanged handlers) */
   function resetPromo() {
     setPDraft(EMPTY_PROMO);
     setPErr(null);
@@ -288,7 +326,9 @@ export default function AdminPage() {
       type: p.type,
       value: p.value != null ? String(p.value) : "",
       enabled: p.enabled,
-      startsAt: p.startsAt ? new Date(p.startsAt).toISOString().slice(0, 10) : "",
+      startsAt: p.startsAt
+        ? new Date(p.startsAt).toISOString().slice(0, 10)
+        : "",
       endsAt: p.endsAt ? new Date(p.endsAt).toISOString().slice(0, 10) : "",
     });
     setPMsg(null);
@@ -303,10 +343,17 @@ export default function AdminPage() {
       const body = {
         code: pDraft.code.trim().toUpperCase(),
         type: pDraft.type,
-        value: pDraft.type === "freeShipping" ? undefined : Number(pDraft.value || 0),
+        value:
+          pDraft.type === "freeShipping"
+            ? undefined
+            : Number(pDraft.value || 0),
         enabled: pDraft.enabled,
-        startsAt: pDraft.startsAt ? new Date(`${pDraft.startsAt}T00:00:00`).toISOString() : undefined,
-        endsAt: pDraft.endsAt ? new Date(`${pDraft.endsAt}T23:59:59`).toISOString() : undefined,
+        startsAt: pDraft.startsAt
+          ? new Date(`${pDraft.startsAt}T00:00:00`).toISOString()
+          : undefined,
+        endsAt: pDraft.endsAt
+          ? new Date(`${pDraft.endsAt}T23:59:59`).toISOString()
+          : undefined,
       };
       const exists = promos.some((p) => p.code === body.code);
       const method = exists ? "PUT" : "POST";
@@ -353,12 +400,10 @@ export default function AdminPage() {
   const filteredOrders = useMemo(() => {
     const q = orderQuery.trim();
     if (!q) return orders;
-    return orders.filter((o) =>
-      o.id.toLowerCase().includes(q.toLowerCase())
-    );
+    return orders.filter((o) => o.id.toLowerCase().includes(q.toLowerCase()));
   }, [orders, orderQuery]);
 
-  // ——— NEW: product filtering (by text + category) ———
+  // product filtering (by text + category)
   const productCategories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => {
@@ -425,25 +470,66 @@ export default function AdminPage() {
           onChange={(e) => setDraft({ ...draft, slug: e.target.value })}
         />
 
-        <div className="flex gap-2 md:col-span-2">
-          <input
-            className="field flex-1"
-            placeholder="Image path (auto after upload)"
-            value={draft.image}
-            onChange={(e) => setDraft({ ...draft, image: e.target.value })}
-          />
-          <label className="btn-secondary cursor-pointer">
-            Upload
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) uploadImage(f).catch((er) => setErr(er.message));
-              }}
-            />
-          </label>
+        {/* IMAGES (multi) */}
+        <div className="md:col-span-2">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="font-semibold text-slate-200">Images</div>
+            <label className="btn-secondary cursor-pointer">
+              Upload
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) =>
+                  uploadImages(e.target.files).catch((er) => setErr(er.message))
+                }
+              />
+            </label>
+          </div>
+
+          {draft.images.length === 0 ? (
+            <div className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.35)] p-3 text-sm text-slate-400">
+              No images yet. Upload one or more (first image becomes the
+              product’s primary image).
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {draft.images.map((src, i) => (
+                <div
+                  key={i}
+                  className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.35)] p-2"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt={`img-${i}`}
+                    className="h-28 w-full object-contain rounded bg-slate-900/40"
+                  />
+                  <div className="mt-2 flex items-center justify-between">
+                    <button
+                      type="button"
+                      className="btn-ghost text-rose-300 hover:text-rose-200"
+                      onClick={() => removeImage(i)}
+                    >
+                      Remove
+                    </button>
+                    {i !== 0 ? (
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => makePrimary(i)}
+                      >
+                        Make primary
+                      </button>
+                    ) : (
+                      <span className="text-xs text-emerald-300">Primary</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <input
@@ -560,7 +646,9 @@ export default function AdminPage() {
             >
               <option value="all">All categories</option>
               {productCategories.map((c) => (
-                <option key={c} value={c}>{c}</option>
+                <option key={c} value={c}>
+                  {c}
+                </option>
               ))}
             </select>
             <button className="btn-ghost" onClick={load} disabled={loading}>
@@ -585,7 +673,8 @@ export default function AdminPage() {
                   <div className="min-w-0">
                     <div className="truncate font-medium">{p.name}</div>
                     <div className="text-xs text-slate-400 truncate">
-                      {p.slug}{cat ? ` • ${cat}` : ""}
+                      {p.slug}
+                      {cat ? ` • ${cat}` : ""}
                     </div>
                     <div className="mt-1 flex items-center gap-2">
                       {onSale ? (
@@ -736,7 +825,10 @@ export default function AdminPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  <button className="btn-secondary" onClick={() => editPromo(pm)}>
+                  <button
+                    className="btn-secondary"
+                    onClick={() => editPromo(pm)}
+                  >
                     Edit
                   </button>
                   <button
@@ -819,7 +911,10 @@ export default function AdminPage() {
                         <option value="completed">Completed</option>
                         <option value="cancelled">Cancelled</option>
                       </select>
-                      <Link className="btn-secondary" href={`/admin/orders/${o.id}`}>
+                      <Link
+                        className="btn-secondary"
+                        href={`/admin/orders/${o.id}`}
+                      >
                         Details
                       </Link>
                       <button

@@ -12,12 +12,10 @@ export default function ProductDetail({ product }: { product: Product }) {
   const { add } = useCart();
   const [qty, setQty] = useState(1);
 
-  const img =
-    typeof product.image === "string" && product.image.trim()
-      ? product.image.startsWith("/") || /^https?:\/\//.test(product.image)
-        ? product.image
-        : `/${product.image}`
-      : "/placeholder.png";
+  const imgs = (product.images && product.images.length ? product.images : [product.image]).map(
+    (s) => (s.startsWith("/") || /^https?:\/\//.test(s) ? s : `/${s}`)
+  );
+  const [index, setIndex] = useState(0);
 
   const salePrice = product.salePrice;
   const stock = product.stock ?? 0;
@@ -26,7 +24,6 @@ export default function ProductDetail({ product }: { product: Product }) {
     typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
 
   const priceToUse = hasSale ? (salePrice as number) : product.price;
-
   const discountPct =
     hasSale && salePrice
       ? Math.round(((product.price - salePrice) / product.price) * 100)
@@ -38,7 +35,7 @@ export default function ProductDetail({ product }: { product: Product }) {
         id: product.id,
         name: product.name,
         price: priceToUse,
-        image: img,
+        image: imgs[0],
         slug: product.slug,
       },
       qty
@@ -46,11 +43,9 @@ export default function ProductDetail({ product }: { product: Product }) {
     toast.success(`${product.name} added to cart!`);
   };
 
-  /** Render dynamic specs */
   const renderSpecs = () => {
     const s: any = product.specs;
     if (!s) return null;
-
     if (typeof s === "object" && !Array.isArray(s)) {
       return Object.entries(s)
         .filter(([k, v]) => String(k).trim() && String(v ?? "").trim())
@@ -61,17 +56,15 @@ export default function ProductDetail({ product }: { product: Product }) {
           </li>
         ));
     }
-
     if (Array.isArray(s)) {
       return s.map((t: string, i: number) => <li key={i}>{t}</li>);
     }
-
     return null;
   };
 
   return (
     <div className="grid gap-10 lg:grid-cols-2">
-      {/* Image */}
+      {/* Gallery */}
       <div className="relative rounded-lg overflow-hidden border border-slate-800/60 bg-[rgba(10,15,28,0.4)]">
         <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
           {outOfStock && (
@@ -85,10 +78,11 @@ export default function ProductDetail({ product }: { product: Product }) {
             </span>
           )}
         </div>
+
         <div className="aspect-[4/3] flex items-center justify-center bg-white">
           <Image
-            src={img}
-            alt={product.name}
+            src={imgs[index]}
+            alt={`${product.name} ${index + 1}`}
             width={800}
             height={600}
             sizes="(max-width: 1024px) 100vw, 800px"
@@ -96,6 +90,23 @@ export default function ProductDetail({ product }: { product: Product }) {
             priority
           />
         </div>
+
+        {/* Thumbnails */}
+        {imgs.length > 1 && (
+          <div className="flex gap-2 p-3 overflow-x-auto bg-[rgba(10,15,28,0.5)] border-t border-slate-800/60">
+            {imgs.map((src, i) => (
+              <button
+                key={i}
+                className={`shrink-0 rounded border ${i === index ? "border-indigo-500" : "border-slate-700"} bg-slate-900`}
+                onClick={() => setIndex(i)}
+                aria-label={`Image ${i + 1}`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={src} alt={`thumb-${i}`} className="h-16 w-20 object-contain rounded" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Info */}
@@ -110,14 +121,19 @@ export default function ProductDetail({ product }: { product: Product }) {
           )}
         </div>
 
-        <div className="mb-6 flex items-baseline gap-2">
-          <p className="text-2xl font-bold text-white">
-            {formatCurrency(priceToUse)}
-          </p>
-          {hasSale && (
-            <span className="text-slate-400 line-through">
-              {formatCurrency(product.price)}
+        <div className="mb-6">
+          <div className="flex items-baseline gap-2">
+            <p className="text-2xl font-bold text-white">
+              {formatCurrency(priceToUse)}
+            </p>
+            <span className="hidden sm:inline text-slate-400 line-through">
+              {hasSale ? formatCurrency(product.price) : ""}
             </span>
+          </div>
+          {hasSale && (
+            <div className="sm:hidden text-slate-400 line-through">
+              {formatCurrency(product.price)}
+            </div>
           )}
         </div>
 
@@ -126,35 +142,16 @@ export default function ProductDetail({ product }: { product: Product }) {
 
         <div className="flex items-center gap-3">
           <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-800">
-            <button
-              type="button"
-              className="h-9 w-9 border-r border-slate-700 text-white"
-              onClick={() => setQty((n) => Math.max(1, n - 1))}
-            >
-              −
-            </button>
+            <button type="button" className="h-9 w-9 border-r border-slate-700 text-white" onClick={() => setQty((n) => Math.max(1, n - 1))}>−</button>
             <span className="px-3 tabular-nums text-white">{qty}</span>
-            <button
-              type="button"
-              className="h-9 w-9 border-l border-slate-700 text-white"
-              onClick={() => setQty((n) => n + 1)}
-            >
-              +
-            </button>
+            <button type="button" className="h-9 w-9 border-l border-slate-700 text-white" onClick={() => setQty((n) => n + 1)}>+</button>
           </div>
 
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={outOfStock}
-            onClick={handleAddToCart}
-          >
+          <button type="button" className="btn-primary" disabled={outOfStock} onClick={handleAddToCart}>
             {outOfStock ? "Unavailable" : "Add to Cart"}
           </button>
 
-          <Link href="/products" className="btn-secondary">
-            Back to Products
-          </Link>
+          <Link href="/products" className="btn-secondary">Back to Products</Link>
         </div>
       </div>
     </div>
