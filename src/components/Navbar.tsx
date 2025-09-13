@@ -42,7 +42,7 @@ export default function Navbar() {
     { href: "/contact", label: "Contact", match: (p: string) => p === "/contact" },
     // Keep one top-level “Policies” for nav; sub-pages live in /policies/*
     { href: "/policies", label: "Policies", match: (p: string) => p.startsWith("/policies") },
-    { href: "/faq", label: "FAQ", match: (p: string) => p === "/faq" },
+    { href: "/faq", label: "FAQs", match: (p: string) => p === "/faq" },
   ];
 
   // ✅ Close menu on every route change to avoid stale open state
