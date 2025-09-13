@@ -17,18 +17,18 @@ export default function PoliciesIndex() {
 
       <ul className="space-y-3 text-slate-200 underline-offset-2">
         <li>
-          <a className="hover:underline" href="/policies/returns">
-            Returns &amp; Warranty Policy
+          <a className="hover:underline" href="/policies/privacy">
+            Privacy Policy
           </a>
         </li>
-        <li>
+         <li>
           <a className="hover:underline" href="/policies/shipping">
             Shipping &amp; Delivery Policy
           </a>
         </li>
         <li>
-          <a className="hover:underline" href="/policies/privacy">
-            Privacy Policy
+          <a className="hover:underline" href="/policies/returns">
+            Returns &amp; Warranty Policy
           </a>
         </li>
       </ul>
