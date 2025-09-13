@@ -1,26 +1,18 @@
 // src/app/products/page.tsx
-"use client";
-
-import { useState, useMemo } from "react";
-import ProductCard from "../../components/ProductCard";
-import SearchBar from "../../components/SearchBar";
-import { getProducts } from "../../lib/products";
-import type { Product } from "../../lib/products";
-
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-/* ---------- search helpers ---------- */
+import { getProducts } from "../../lib/products";
+import type { Product } from "../../lib/products";
+import ProductsClient from "../../components/ProductsClient";
+
+/* ---------- search helpers (server) ---------- */
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function matches(product: Product, q: string) {
-  const tokens = q
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-
+  const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return true;
 
   const haystacks: string[] = [
@@ -38,7 +30,7 @@ function matches(product: Product, q: string) {
   });
 }
 
-/* ---------- sort helpers ---------- */
+/* ---------- sort helpers (server) ---------- */
 function sortProducts(a: Product, b: Product) {
   const aIn = (a.stock ?? 0) > 0;
   const bIn = (b.stock ?? 0) > 0;
@@ -57,60 +49,16 @@ function sortProducts(a: Product, b: Product) {
   return a.name.localeCompare(b.name); // stable fallback
 }
 
-/* ---------- Page ---------- */
 type PageProps = { searchParams?: { q?: string } };
 
 export default async function ProductsPage({ searchParams }: PageProps) {
   const all = await getProducts();
-  const q = (searchParams?.q ?? "").trim();
 
+  const q = (searchParams?.q ?? "").trim();
   const filtered = (q ? all.filter((p) => matches(p, q)) : all).slice();
+
   filtered.sort(sortProducts);
 
+  // hand off to client component for "Load more"
   return <ProductsClient products={filtered} initialQuery={q} />;
-}
-
-/* ---------- Client component for "Load more" ---------- */
-function ProductsClient({ products, initialQuery }: { products: Product[]; initialQuery: string }) {
-  const [visibleCount, setVisibleCount] = useState(12);
-
-  const visible = useMemo(() => products.slice(0, visibleCount), [products, visibleCount]);
-  const hasMore = visibleCount < products.length;
-
-  return (
-    <div className="space-y-6">
-      {/* Header + search */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold text-white">Products</h1>
-        <SearchBar
-          initial={initialQuery}
-          placeholder="Search products…"
-          className="w-full sm:max-w-sm"
-        />
-      </div>
-
-      {/* Grid */}
-      <div className="grid gap-4 grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {visible.map((p) => (
-          <ProductCard key={p.id} product={p} />
-        ))}
-      </div>
-
-      {/* Load more */}
-      {hasMore && (
-        <div className="flex justify-center">
-          <button
-            className="btn-primary px-6 py-2"
-            onClick={() => setVisibleCount((c) => c + 12)}
-          >
-            Load more
-          </button>
-        </div>
-      )}
-
-      {initialQuery && products.length === 0 && (
-        <p className="text-slate-400">No matches for “{initialQuery}”.</p>
-      )}
-    </div>
-  );
 }
