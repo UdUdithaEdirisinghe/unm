@@ -36,7 +36,6 @@ function isOnSale(p: Product) {
 function normalizeCategoryName(raw: string): string {
   const s = (raw || "").trim().toLowerCase();
 
-  // common variants / typos covered here
   if (/power\s*-?\s*bank/.test(s)) return "power-banks";
   if (/(charger|adaptor|adapter|gan|wall\s*charger|car\s*charger)/.test(s)) return "chargers";
   if (/(cable|usb|type\s*-?\s*c|lightning|micro\s*-?\s*usb)/.test(s)) return "cables";
@@ -113,7 +112,6 @@ export default async function HomePage() {
   const preferredOrder = ["power-banks", "chargers", "cables", "bags", "audio", "others"];
   const present = Object.keys(categories);
 
-  // Build the final order: preferred ones that are present, then any extra unknowns, with "others" last.
   const orderedCats = [
     ...preferredOrder.filter((k) => k !== "others" && present.includes(k)),
     ...present.filter((k) => !preferredOrder.includes(k) && k !== "others"),
@@ -138,7 +136,8 @@ export default async function HomePage() {
             See all →
           </Link>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {/* 🔥 Updated grid: 2 cols on mobile, 3 on lg, 4 on xl */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((p) => (
             <ProductCard key={(p as any).id} product={p} />
           ))}
@@ -170,7 +169,7 @@ export default async function HomePage() {
       {/* On Sale */}
       <Section title="On Sale" items={onSale} href="/products?onSale=true" />
 
-      {/* Category rows (only what exists, nice order; in-stock first, newest next) */}
+      {/* Category rows */}
       {orderedCats.map((cat) => {
         const items = categories[cat] || [];
         if (items.length === 0) return null;
