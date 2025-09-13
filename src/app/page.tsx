@@ -4,11 +4,8 @@ import ProductCard from "../components/ProductCard";
 import SearchBar from "../components/SearchBar";
 import { getProducts, type Product } from "../lib/products";
 
-/** Always read fresh product stock/prices for homepage */
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-/* ---------------- Helpers (local, no other files touched) --------------- */
 
 const safeNum = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 const isInStock = (p: Product) => safeNum((p as any).stock, 0) > 0;
@@ -18,28 +15,19 @@ function ts(p: Product) {
   return d && !isNaN(d.getTime()) ? d.getTime() : 0;
 }
 
-/** Very light popularity score with safe fallbacks */
 function popularity(p: Product) {
   const v = safeNum((p as any).views ?? (p as any).sold ?? (p as any).popularity, 0);
   if (v > 0) return v;
-  // stable fallback by id so order doesn’t jump: last 6 digits as number
   const id = String((p as any).id ?? "");
   const tail = id.slice(-6).replace(/\D/g, "");
   return safeNum(tail, 0);
 }
 
-/** Map product to a canonical storefront category without changing your DB.
- * If your Product already has category, we use it; otherwise we infer from the name/slug.
- */
 function inferCategory(p: Product): string {
   const raw = String(((p as any).category || (p as any).type || p?.name || "")).toLowerCase();
-
-  // Prefer explicit category if present
   if ((p as any).category) return raw;
 
-  // Infer from name/slug keywords
   const hay = [raw, String(p?.name ?? ""), String((p as any).slug ?? "")].join(" ").toLowerCase();
-
   if (/\b(power ?bank|powerbank)\b/.test(hay)) return "power-banks";
   if (/\b(cable|type[- ]?c|usb[- ]?c|lightning|micro[- ]?usb)\b/.test(hay)) return "cables";
   if (/\b(charger|adapter|gan|wall charger|car charger)\b/.test(hay)) return "chargers";
@@ -48,7 +36,6 @@ function inferCategory(p: Product): string {
   return "others";
 }
 
-/** Utility: pick n items with optional filter + sort */
 function pick(
   products: Product[],
   n: number,
@@ -57,68 +44,40 @@ function pick(
 ) {
   const arr = filter ? products.filter(filter) : [...products];
   if (sort) arr.sort(sort);
-  return arr.slice(0, n);
+  return n > 0 ? arr.slice(0, n) : arr;
 }
-
-/* ----------------------------- Page ------------------------------ */
 
 export default async function HomePage() {
   const all = await getProducts();
 
-  // Keep your “Featured” feel but make it newest in-stock
+  // Featured = most visited/popular (in-stock first)
   const featured = pick(
     all,
     8,
-    (p) => isInStock(p),
-    (a, b) => ts(b) - ts(a) // newest first
-  );
-
-  // Category rows (you can re-order or hide any section)
-  const powerBanks = pick(
-    all,
-    8,
-    (p) => inferCategory(p) === "power-banks",
-    (a, b) => (isInStock(b) as any) - (isInStock(a) as any) || ts(b) - ts(a)
-  );
-
-  const chargers = pick(
-    all,
-    8,
-    (p) => inferCategory(p) === "chargers",
-    (a, b) => (isInStock(b) as any) - (isInStock(a) as any) || ts(b) - ts(a)
-  );
-
-  const cables = pick(
-    all,
-    8,
-    (p) => inferCategory(p) === "cables",
-    (a, b) => (isInStock(b) as any) - (isInStock(a) as any) || ts(b) - ts(a)
-  );
-
-  const bags = pick(
-    all,
-    8,
-    (p) => inferCategory(p) === "bags",
-    (a, b) => (isInStock(b) as any) - (isInStock(a) as any) || ts(b) - ts(a)
-  );
-
-  // “Most Visited” (popularity/sold/views) with safe fallback
-  const mostVisited = pick(
-    all,
-    8,
     undefined,
-    (a, b) => popularity(b) - popularity(a)
+    (a, b) =>
+      (isInStock(b) as any) - (isInStock(a) as any) ||
+      popularity(b) - popularity(a) ||
+      ts(b) - ts(a)
   );
 
-  // “New Arrivals”
-  const newArrivals = pick(
+  // On Sale = promo or discount
+  const onSale = pick(
     all,
     8,
-    undefined,
-    (a, b) => ts(b) - ts(a)
+    (p) => safeNum((p as any).promoDiscount, 0) > 0 || Boolean((p as any).promoCode),
+    (a, b) => (isInStock(b) as any) - (isInStock(a) as any) || ts(b) - ts(a)
   );
 
-  // Helper: section UI (keeps your colors/spacing)
+  // Group products by category
+  const categories: Record<string, Product[]> = {};
+  for (const p of all) {
+    const cat = inferCategory(p);
+    if (!categories[cat]) categories[cat] = [];
+    categories[cat].push(p);
+  }
+
+  // Section UI
   function Section({
     title,
     href = "/products",
@@ -163,20 +122,41 @@ export default async function HomePage() {
         />
       </section>
 
-      {/* Featured (kept from your layout: newest in-stock) */}
+      {/* Featured (most visited) */}
       <Section title="Featured" items={featured} href="/products" />
 
-      {/* Most Visited / Popular */}
-      <Section title="Most Visited" items={mostVisited} href="/products" />
+      {/* On Sale */}
+      <Section title="On Sale" items={onSale} href="/products?onSale=true" />
 
-      {/* New Arrivals */}
-      <Section title="New Arrivals" items={newArrivals} href="/products" />
+      {/* Category rows */}
+      {Object.entries(categories).map(([cat, items]) => {
+        // sort: in-stock first, newest first
+        items.sort(
+          (a, b) =>
+            (isInStock(b) as any) - (isInStock(a) as any) || ts(b) - ts(a)
+        );
+        const title =
+          cat === "power-banks"
+            ? "Power Banks"
+            : cat === "chargers"
+            ? "Chargers & Adapters"
+            : cat === "cables"
+            ? "Cables"
+            : cat === "bags"
+            ? "Bags & Sleeves"
+            : cat === "audio"
+            ? "Audio"
+            : "Others";
 
-      {/* Category rows (Power Banks, Chargers, Cables, Bags) */}
-      <Section title="Power Banks" items={powerBanks} href="/products?cat=power-banks" />
-      <Section title="Chargers & Adapters" items={chargers} href="/products?cat=chargers" />
-      <Section title="Cables" items={cables} href="/products?cat=cables" />
-      <Section title="Bags & Sleeves" items={bags} href="/products?cat=bags" />
+        return (
+          <Section
+            key={cat}
+            title={title}
+            items={items.slice(0, 8)}
+            href={`/products?cat=${cat}`}
+          />
+        );
+      })}
     </div>
   );
 }
