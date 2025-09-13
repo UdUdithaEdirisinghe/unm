@@ -46,7 +46,8 @@ export default function ProductCard({ product }: Props) {
   };
 
   return (
-    <div className="relative rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-3 flex flex-col">
+    <div className="relative flex flex-col rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-3">
+      {/* badges */}
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
         {outOfStock && (
           <span className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white shadow">
@@ -60,6 +61,7 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
+      {/* image area with fixed aspect */}
       <Link
         href={`/products/${product.slug}`}
         className="block rounded-md overflow-hidden border border-slate-800/60 bg-[rgba(10,15,28,0.4)]"
@@ -71,11 +73,12 @@ export default function ProductCard({ product }: Props) {
             width={600}
             height={450}
             sizes="(max-width: 640px) 100vw, 600px"
-            className="object-contain"
+            className="object-contain max-h-48"
           />
         </div>
       </Link>
 
+      {/* text block */}
       <div className="mt-3 flex-1">
         <Link
           href={`/products/${product.slug}`}
@@ -94,7 +97,8 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      <div className="mt-2 flex items-baseline gap-2">
+      {/* price area fixed spacing */}
+      <div className="mt-2 flex items-baseline gap-2 min-h-[28px]">
         <p className="text-lg font-semibold text-white">
           {formatCurrency(priceToUse)}
         </p>
@@ -105,6 +109,7 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
+      {/* button fixed at bottom */}
       <div className="mt-3">
         <button
           className={`btn-primary w-full ${
