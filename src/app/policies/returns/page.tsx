@@ -1,23 +1,33 @@
-export const metadata = { title: "Returns & Warranty | Manny.lk" };
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const metadata = { title: "Returns & Warranty • Manny.lk" };
 
 export default function ReturnsPolicy() {
   return (
     <section className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-2xl font-semibold text-white mb-4">Returns & Warranty Policy</h1>
-      <div className="space-y-4 text-slate-300">
+      <h1 className="text-2xl font-semibold text-white">Returns &amp; Warranty Policy</h1>
+      <div className="prose prose-invert mt-4 max-w-none">
         <p>
-          If an item arrives damaged or defective, contact us within <b>7 days</b> of delivery with your order ID,
-          photos/video, and a description. We’ll guide you through replacement or refund options.
+          We stand by the quality of our products. If your item is defective on arrival or
+          develops a manufacturing fault within the warranty period, we’ll assist with repair
+          or replacement according to brand/distributor terms.
         </p>
-        <ul className="list-disc pl-6">
-          <li>Items must include original packaging and accessories.</li>
-          <li>Physical damage or signs of misuse may void eligibility.</li>
-          <li>Warranty terms may vary by product; see the product page for details.</li>
+        <h3>Eligibility</h3>
+        <ul>
+          <li>Provide the order number and proof of purchase.</li>
+          <li>Original packaging and accessories are required where possible.</li>
+          <li>Physical, liquid, and accidental damage are not covered.</li>
         </ul>
-        <p>
-          For returns, customers may be responsible for courier fees unless the item is DOA or incorrectly supplied.
+        <h3>Process</h3>
+        <ol>
+          <li>Contact us with details and a brief description of the issue.</li>
+          <li>We may request photos/videos for quick assessment.</li>
+          <li>Ship/bring the item to the service point we provide.</li>
+        </ol>
+        <p className="text-slate-400">
+          Note: Diagnostics and manufacturer timelines may apply. Data loss and
+          compatibility issues are excluded.
         </p>
-        <p>To start a return: email <a href="mailto:support@manny.lk" className="underline">support@manny.lk</a>.</p>
       </div>
     </section>
   );

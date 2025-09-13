@@ -1,17 +1,27 @@
-export const metadata = { title: "Shipping & Delivery | Manny.lk" };
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const metadata = { title: "Privacy Policy • Manny.lk" };
 
-export default function ShippingPolicy() {
+export default function PrivacyPolicy() {
   return (
     <section className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-2xl font-semibold text-white mb-4">Shipping & Delivery Policy</h1>
-      <div className="space-y-4 text-slate-300">
-        <p>We deliver island-wide via trusted couriers. Orders are processed within <b>1–2 business days</b>.</p>
-        <ul className="list-disc pl-6">
-          <li>Delivery time: typically 2–5 business days depending on location.</li>
-          <li>Fees are shown at checkout; Cash-on-Delivery is not available.</li>
-          <li>We’ll notify you if an item is out of stock or needs extra time.</li>
+      <h1 className="text-2xl font-semibold text-white">Privacy Policy</h1>
+      <div className="prose prose-invert mt-4 max-w-none">
+        <p>
+          We collect only what we need to process your orders and improve our services:
+          contact details, addresses, and order history. We never sell your data.
+        </p>
+        <h3>Data Use</h3>
+        <ul>
+          <li>Fulfil orders, payments, and delivery.</li>
+          <li>Provide support and service updates.</li>
+          <li>Fraud prevention and analytics.</li>
         </ul>
-        <p>For address changes after ordering, contact us ASAP with your order ID.</p>
+        <h3>Security</h3>
+        <p>
+          We use modern security practices and reputable payment processors. You can request
+          a copy or deletion of your personal data by contacting us.
+        </p>
       </div>
     </section>
   );
