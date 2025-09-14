@@ -132,7 +132,6 @@ export default function CheckoutPage() {
     if (items.length === 0) return setErr("Your cart is empty.");
     if (!agree) return setErr("Please agree to the Terms & Conditions.");
 
-    // Shipping different → name, address, phone are mandatory
     let shippingAddress: typeof ship | undefined;
     if (shipDifferent) {
       if (
@@ -185,9 +184,7 @@ export default function CheckoutPage() {
 
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data?.ok) {
-        setErr(
-          typeof data?.error === "string" ? data.error : "Order failed."
-        );
+        setErr(typeof data?.error === "string" ? data.error : "Order failed.");
         return;
       }
 
@@ -201,19 +198,19 @@ export default function CheckoutPage() {
   }
 
   return (
-    <section className="mx-auto w-full max-w-5xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-white">Checkout</h1>
+    <section className="mx-auto w-full max-w-5xl px-4 py-10">
+      <header className="mb-6">
+        <h1 className="text-2xl font-bold text-white">Checkout</h1>
+      </header>
 
-      {/* General error */}
+      {/* Alerts */}
       {err && (
-        <div className="mb-4 rounded-lg border border-rose-700/40 bg-rose-900/20 px-4 py-2 text-rose-200">
+        <div className="mb-5 rounded-lg border border-rose-700/40 bg-rose-900/20 px-4 py-2 text-rose-200">
           {err}
         </div>
       )}
-
-      {/* Stock shortages */}
       {shortages && shortages.length > 0 && (
-        <div className="mb-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-amber-100">
+        <div className="mb-5 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-amber-100">
           <div className="font-semibold mb-1">Item availability</div>
           <ul className="list-disc pl-5 text-sm">
             {shortages.map((s) => (
@@ -230,31 +227,32 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      <form onSubmit={place} className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        {/* Billing details */}
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <input className="field" placeholder="First name" value={bill.firstName} onChange={updBill("firstName")} required />
-            <input className="field" placeholder="Last name" value={bill.lastName} onChange={updBill("lastName")} required />
+      <form onSubmit={place} className="grid gap-6 lg:grid-cols-[1fr,420px]">
+        {/* Billing / shipping column */}
+        <div className="space-y-6">
+          <div className="panel p-5 space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <input className="field" placeholder="First name" value={bill.firstName} onChange={updBill("firstName")} required />
+              <input className="field" placeholder="Last name" value={bill.lastName} onChange={updBill("lastName")} required />
+            </div>
+            <input className="field" type="email" placeholder="Email" value={bill.email} onChange={updBill("email")} required />
+            <input className="field" type="tel" placeholder="Phone" value={bill.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updBill("phone")} required />
+            <input className="field" placeholder="Street address" value={bill.address} onChange={updBill("address")} required />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <input className="field" placeholder="Town / City" value={bill.city} onChange={updBill("city")} required />
+              <input className="field" placeholder="Postcode / ZIP (optional)" value={bill.postal} onChange={updBill("postal")} />
+            </div>
+            <textarea className="textarea" placeholder="Order notes (optional)" value={bill.notes} onChange={updBill("notes")} />
           </div>
-
-          <input className="field" type="email" placeholder="Email" value={bill.email} onChange={updBill("email")} required />
-
-          <input className="field" type="tel" placeholder="Phone" value={bill.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updBill("phone")} required />
-
-          <input className="field" placeholder="Street address" value={bill.address} onChange={updBill("address")} required />
-
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <input className="field" placeholder="Town / City" value={bill.city} onChange={updBill("city")} required />
-            <input className="field" placeholder="Postcode / ZIP (optional)" value={bill.postal} onChange={updBill("postal")} />
-          </div>
-
-          <textarea className="textarea" placeholder="Order notes (optional)" value={bill.notes} onChange={updBill("notes")} />
 
           {/* Ship to different address */}
-          <div className="panel p-4 space-y-3">
+          <div className="panel p-5 space-y-3">
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={shipDifferent} onChange={(e) => setShipDifferent(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={shipDifferent}
+                onChange={(e) => setShipDifferent(e.target.checked)}
+              />
               <span className="text-slate-200">Ship to a different address</span>
             </label>
 
@@ -275,137 +273,129 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Summary / Payment */}
-        <div className="panel p-4 space-y-4">
-          <h2 className="text-lg font-semibold text-white">Your order</h2>
+        {/* Order summary column */}
+        <aside className="space-y-6">
+          <div className="panel p-5 space-y-4">
+            <h2 className="text-lg font-semibold text-white">Your order</h2>
 
-          <div className="space-y-2 text-sm text-slate-300">
-            {items.map((it) => (
-              <div key={it.id} className="flex items-center justify-between">
-                <div className="truncate">{it.name} × {it.quantity}</div>
-                <div className="shrink-0">{formatCurrency(it.price * it.quantity)}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Promo input */}
-          <div className="mt-2">
-            {applied ? (
-              <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
-                <span>
-                  Code <b>{applied.code}</b> applied
-                </span>
-                <button type="button" onClick={removeCode} className="btn-ghost">
-                  Remove
-                </button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  className="field w-full"
-                  placeholder="Promotion code"
-                  value={codeInput}
-                  onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
-                />
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={applyCode}
-                  disabled={checking}
-                  aria-label="Apply promotion code"
-                >
-                  {checking ? "Checking…" : "Apply"}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Totals */}
-          <div className="mt-2 border-t border-slate-700/60 pt-2 text-sm space-y-1">
-            <div className="flex justify-between">
-              <span>Subtotal</span>
-              <span>{formatCurrency(subtotal)}</span>
-            </div>
-            {discount > 0 && (
-              <div className="flex justify-between text-emerald-300">
-                <span>Promo discount</span>
-                <span>-{formatCurrency(discount)}</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span>Shipping</span>
-              <span>{applied?.freeShipping ? "Free" : formatCurrency(shipping)}</span>
-            </div>
-            <div className="flex justify-between font-semibold text-white">
-              <span>Total</span>
-              <span>{formatCurrency(total)}</span>
-            </div>
-          </div>
-
-          {/* Payment */}
-          <div className="space-y-3 pt-2">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="pay"
-                value="COD"
-                checked={bill.payment === "COD"}
-                onChange={() => setBill((f) => ({ ...f, payment: "COD" }))}
-              />
-              <span>Cash on delivery</span>
-            </label>
-
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="pay"
-                value="BANK"
-                checked={bill.payment === "BANK"}
-                onChange={() => setBill((f) => ({ ...f, payment: "BANK" }))}
-              />
-              <span>Direct bank transfer</span>
-            </label>
-
-            {bill.payment === "BANK" && (
-              <div className="space-y-3 rounded-lg border border-slate-700/60 p-3">
-                <div className="text-sm text-slate-200">
-                  <div><b>Bank:</b> Sampath Bank PLC</div>
-                  <div><b>Branch:</b> Colombo Fort</div>
-                  <div><b>Account No:</b> 001234567890</div>
-                  <div><b>Contact:</b> 0771234567</div>
+            <div className="space-y-2 text-sm text-slate-300">
+              {items.map((it) => (
+                <div key={it.id} className="flex items-center justify-between">
+                  <div className="truncate">{it.name} × {it.quantity}</div>
+                  <div className="shrink-0">{formatCurrency(it.price * it.quantity)}</div>
                 </div>
-                <div>
-                  <label className="block text-sm mb-1 text-slate-200">Upload bank slip</label>
+              ))}
+            </div>
+
+            {/* Promo */}
+            <div className="mt-2">
+              {applied ? (
+                <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
+                  <span>Code <b>{applied.code}</b> applied</span>
+                  <button type="button" onClick={removeCode} className="btn-ghost">Remove</button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
                   <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)}
-                    required
+                    className="field w-full"
+                    placeholder="Promotion code"
+                    value={codeInput}
+                    onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
                   />
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={applyCode}
+                    disabled={checking}
+                    aria-label="Apply promotion code"
+                  >
+                    {checking ? "Checking…" : "Apply"}
+                  </button>
                 </div>
+              )}
+            </div>
+
+            {/* Totals */}
+            <div className="mt-2 border-t border-slate-700/60 pt-2 text-sm space-y-1">
+              <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span>{formatCurrency(subtotal)}</span>
               </div>
-            )}
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-300">
+                  <span>Promo discount</span>
+                  <span>-{formatCurrency(discount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between">
+                <span>Shipping</span>
+                <span>{applied?.freeShipping ? "Free" : formatCurrency(shipping)}</span>
+              </div>
+              <div className="flex justify-between font-semibold text-white">
+                <span>Total</span>
+                <span>{formatCurrency(total)}</span>
+              </div>
+            </div>
+
+            {/* Payment */}
+            <div className="space-y-3 pt-2">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="pay"
+                  value="COD"
+                  checked={bill.payment === "COD"}
+                  onChange={() => setBill((f) => ({ ...f, payment: "COD" }))}
+                />
+                <span>Cash on delivery</span>
+              </label>
+
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="pay"
+                  value="BANK"
+                  checked={bill.payment === "BANK"}
+                  onChange={() => setBill((f) => ({ ...f, payment: "BANK" }))}
+                />
+                <span>Direct bank transfer</span>
+              </label>
+
+              {bill.payment === "BANK" && (
+                <div className="space-y-3 rounded-lg border border-slate-700/60 p-3">
+                  <div className="text-sm text-slate-200">
+                    <div><b>Bank:</b> Sampath Bank PLC</div>
+                    <div><b>Branch:</b> Colombo Fort</div>
+                    <div><b>Account No:</b> 001234567890</div>
+                    <div><b>Contact:</b> 0771234567</div>
+                  </div>
+                  <div>
+                    <label className="block text-sm mb-1 text-slate-200">Upload bank slip</label>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Terms & place order */}
+            <label className="mt-2 flex items-center gap-2">
+              <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+              <span className="text-slate-200">
+                I agree to the{" "}
+                <Link href="/policies" className="underline">Terms & Conditions</Link>.
+              </span>
+            </label>
+
+            <button className="btn-primary w-full mt-2" disabled={busy}>
+              {busy ? "Placing…" : "Place Order"}
+            </button>
           </div>
-
-          {/* Terms & Place order */}
-          <label className="mt-2 flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={agree}
-              onChange={(e) => setAgree(e.target.checked)}
-            />
-            <span className="text-slate-200">
-              I agree to the{" "}
-              <Link href="/policies" className="underline">
-                Terms & Conditions
-              </Link>.
-            </span>
-          </label>
-
-          <button className="btn-primary w-full mt-2" disabled={busy}>
-            {busy ? "Placing…" : "Place Order"}
-          </button>
-        </div>
+        </aside>
       </form>
     </section>
   );
