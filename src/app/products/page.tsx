@@ -5,7 +5,7 @@ export const revalidate = 0;
 import { getProducts, type Product } from "../../lib/products";
 import ProductsClient from "../../components/ProductsClient";
 
-/* ---------- helpers ---------- */
+/* ---------- search helpers ---------- */
 function escapeRegExp(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -29,22 +29,27 @@ function matches(product: Product, q: string) {
   });
 }
 
+/* ---------- sort helpers ---------- */
 function sortProducts(a: Product, b: Product) {
   const aIn = (a.stock ?? 0) > 0;
   const bIn = (b.stock ?? 0) > 0;
-  if (aIn !== bIn) return aIn ? -1 : 1;
+  if (aIn !== bIn) return aIn ? -1 : 1; // in-stock first
 
   const aSale =
-    typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+    typeof a.salePrice === "number" &&
+    a.salePrice > 0 &&
+    a.salePrice < a.price;
   const bSale =
-    typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
-  if (aSale !== bSale) return aSale ? -1 : 1;
+    typeof b.salePrice === "number" &&
+    b.salePrice > 0 &&
+    b.salePrice < b.price;
+  if (aSale !== bSale) return aSale ? -1 : 1; // sale first
 
   const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
   const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-  if (aCreated !== bCreated) return bCreated - aCreated;
+  if (aCreated !== bCreated) return bCreated - aCreated; // newest first
 
-  return a.name.localeCompare(b.name);
+  return a.name.localeCompare(b.name); // stable fallback
 }
 
 /* ---------- category helpers ---------- */
@@ -61,8 +66,10 @@ function normalizeCategoryName(raw: string): string {
   const s = (raw || "").trim().toLowerCase();
 
   if (/power\s*-?\s*bank/.test(s)) return "power-banks";
-  if (/(charger|adaptor|adapter|gan|wall\s*charger|car\s*charger)/.test(s)) return "chargers";
-  if (/(cable|usb|type\s*-?\s*c|lightning|micro\s*-?\s*usb)/.test(s)) return "cables";
+  if (/(charger|adaptor|adapter|gan|wall\s*charger|car\s*charger)/.test(s))
+    return "chargers";
+  if (/(cable|usb|type\s*-?\s*c|lightning|micro\s*-?\s*usb)/.test(s))
+    return "cables";
   if (/(backpack|bag|sleeve|pouch|case)/.test(s)) return "bags";
   if (/(earbud|headphone|headset|speaker|audio)/.test(s)) return "audio";
 
@@ -71,7 +78,9 @@ function normalizeCategoryName(raw: string): string {
 }
 
 function inferCategory(p: Product): string {
-  const explicit = String(((p as any).category || (p as any).type || "")).trim();
+  const explicit = String(
+    ((p as any).category || (p as any).type || "")
+  ).trim();
   if (explicit) return normalizeCategoryName(explicit);
 
   const hay = [String(p?.name ?? ""), String((p as any).slug ?? "")]
@@ -101,5 +110,12 @@ export default async function ProductsPage({ searchParams }: PageProps) {
 
   filtered = filtered.slice().sort(sortProducts);
 
-  return <ProductsClient products={filtered} initialQuery={q} />;
+  // ✅ pass initialCat to ProductsClient so header can show "Showing: …"
+  return (
+    <ProductsClient
+      products={filtered}
+      initialQuery={q}
+      initialCat={cat || undefined}
+    />
+  );
 }
