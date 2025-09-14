@@ -10,7 +10,7 @@ export const metadata = {
 
 import FaqClient from "./FaqClient";
 
-/** JSON-LD for SEO (trimmed) */
+/** JSON-LD for SEO */
 const faqLd = {
   "@context": "https://schema.org",
   "@type": "FAQPage",
@@ -58,7 +58,7 @@ export default function FaqPage() {
           or tap the WhatsApp bubble.
         </p>
 
-        {/* extra breathing room before list */}
+        {/* Add spacing before FAQ list */}
         <div className="mt-8">
           <FaqClient />
         </div>

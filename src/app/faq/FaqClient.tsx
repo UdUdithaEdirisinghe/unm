@@ -57,32 +57,35 @@ function Item({
 }) {
   return (
     <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] px-4 py-4">
-      {/* header row: text on left (not clickable), arrow-only button on right */}
-      <div className="flex items-center justify-between gap-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`faq-panel-${index}`}
+        onClick={() => onToggle(index)}
+        className="w-full flex items-center justify-between gap-3 text-left"
+      >
         <span className="font-medium text-slate-100">{qa.q}</span>
-
-        {/* CSS chevron (no SVG ⇒ can't blow up) */}
-        <button
-          type="button"
-          aria-label={open ? "Hide answer" : "Show answer"}
-          aria-expanded={open}
-          aria-controls={`faq-panel-${index}`}
-          onClick={() => onToggle(index)}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-slate-800/40 focus:outline-none focus:ring-2 focus:ring-brand-accent/40"
+        {/* Chevron arrow */}
+        <svg
+          className={`h-5 w-5 shrink-0 text-slate-300 transition-transform duration-300 ${
+            open ? "rotate-180" : "rotate-0"
+          }`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
         >
-          <span
-            className={`inline-block h-3 w-3 border-b-2 border-r-2 border-slate-300 transition-transform duration-300 ${
-              open ? "rotate-45 -translate-y-px" : "-rotate-135 translate-y-px"
-            }`}
-          />
-        </button>
-      </div>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
 
-      {/* answer: hidden by default; smooth open/close; robust against purge */}
+      {/* Answer panel */}
       <div
         id={`faq-panel-${index}`}
-        className="overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out"
-        style={{ maxHeight: open ? 500 : 0, opacity: open ? 1 : 0 }}
+        className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out ${
+          open ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+        }`}
       >
         <p className="pt-3 text-sm text-slate-300 leading-relaxed">{qa.a}</p>
       </div>
@@ -91,22 +94,18 @@ function Item({
 }
 
 export default function FaqClient() {
-  // multiple items can be open at once
-  const [openSet, setOpenSet] = useState<Set<number>>(() => new Set());
-
-  const toggle = (idx: number) => {
-    setOpenSet((cur) => {
-      const next = new Set(cur);
-      next.has(idx) ? next.delete(idx) : next.add(idx);
-      return next;
-    });
-  };
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    // extra separation so it never looks like a table
-    <div className="space-y-6">
+    <div className="space-y-5">
       {faqs.map((qa, i) => (
-        <Item key={qa.q} qa={qa} index={i} open={openSet.has(i)} onToggle={toggle} />
+        <Item
+          key={qa.q}
+          qa={qa}
+          index={i}
+          open={openIndex === i}
+          onToggle={(idx) => setOpenIndex((cur) => (cur === idx ? null : idx))}
+        />
       ))}
     </div>
   );
