@@ -10,7 +10,7 @@ export const metadata = {
 
 import FaqClient from "./FaqClient";
 
-/** JSON-LD for rich FAQ results (keep small) */
+/** JSON-LD for rich FAQ results (keep it small) */
 const faqLd = {
   "@context": "https://schema.org",
   "@type": "FAQPage",
@@ -48,21 +48,25 @@ const faqLd = {
 export default function FaqPage() {
   return (
     <>
-      <section className="mx-auto max-w-3xl px-4 py-10">
-        <h1 className="text-2xl font-semibold text-white">Frequently Asked Questions</h1>
-        <p className="mt-2 mb-6 text-slate-300">
+      <section className="mx-auto max-w-3xl px-4 py-12">
+        <h1 className="text-3xl font-semibold text-white">
+          Frequently Asked Questions
+        </h1>
+        <p className="mt-4 mb-10 text-slate-300">
           Can’t find what you’re looking for?{" "}
           <a href="/contact" className="text-brand-accent hover:underline">
             Contact us
           </a>{" "}
           or tap the WhatsApp bubble.
         </p>
+
         <FaqClient />
       </section>
 
       {/* SEO: FAQ JSON-LD */}
       <script
         type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
       />
     </>
