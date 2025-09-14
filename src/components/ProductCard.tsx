@@ -61,7 +61,7 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* image area */}
+      {/* image */}
       <Link
         href={`/products/${product.slug}`}
         className="block rounded-md overflow-hidden border border-slate-800/60 bg-[rgba(10,15,28,0.4)]"
@@ -78,15 +78,17 @@ export default function ProductCard({ product }: Props) {
         </div>
       </Link>
 
-      {/* text block */}
+      {/* text */}
       <div className="mt-3 flex-1">
+        {/* Name: responsive size + multi-line clamp */}
         <Link
           href={`/products/${product.slug}`}
-          className="block truncate font-medium text-white"
+          className="block font-medium text-white text-sm sm:text-base line-clamp-2 sm:line-clamp-3"
           title={product.name}
         >
           {product.name}
         </Link>
+
         {product.brand && (
           <div className="text-xs text-slate-400 truncate">{product.brand}</div>
         )}
@@ -97,7 +99,7 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* price block → stacked on mobile, inline on desktop */}
+      {/* price */}
       <div className="mt-2 flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
         <p className="text-lg font-semibold text-white">
           {formatCurrency(priceToUse)}
@@ -109,7 +111,7 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* button */}
+      {/* CTA */}
       <div className="mt-3">
         <button
           className={`btn-primary w-full ${
