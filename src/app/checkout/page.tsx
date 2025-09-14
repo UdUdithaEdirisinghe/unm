@@ -16,49 +16,28 @@ export default function CheckoutPage() {
   const { items, clear, subtotal } = useCart();
   const router = useRouter();
 
-  // Billing
   const [bill, setBill] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    address: "",
-    city: "",
-    postal: "",
-    notes: "",
+    firstName: "", lastName: "", email: "", phone: "",
+    address: "", city: "", postal: "", notes: "",
     payment: "COD" as Pay,
   });
 
-  // Optional shipping (different address)
   const [shipDifferent, setShipDifferent] = useState(false);
   const [ship, setShip] = useState({
-    firstName: "",
-    lastName: "",
-    phone: "",
-    address: "",
-    city: "",
-    postal: "",
+    firstName: "", lastName: "", phone: "", address: "", city: "", postal: "",
   });
 
-  // Bank slip
   const [slipFile, setSlipFile] = useState<File | null>(null);
-
-  // Terms
   const [agree, setAgree] = useState(false);
 
-  // Promo
   const [codeInput, setCodeInput] = useState("");
   const [applied, setApplied] = useState<PromoResult | null>(null);
   const [checking, setChecking] = useState(false);
 
-  // Errors/loading
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  // Stock adjustments from server
   const [shortages, setShortages] = useState<Shortage[] | null>(null);
 
-  // Totals
   const discount = applied?.discount ?? 0;
   const shipping = applied?.freeShipping ? 0 : SHIPPING_FEE;
   const total = Math.max(0, subtotal - discount) + shipping;
@@ -98,6 +77,7 @@ export default function CheckoutPage() {
       setChecking(false);
     }
   }
+
   function removeCode() {
     setApplied(null);
     setCodeInput("");
@@ -198,12 +178,10 @@ export default function CheckoutPage() {
   }
 
   return (
-    <section className="mx-auto w-full max-w-5xl px-4 py-10">
-      <header className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Checkout</h1>
-      </header>
+    <section className="mx-auto w-full max-w-6xl px-4 py-10">
+      <h1 className="text-2xl font-bold text-white mb-6">Checkout</h1>
 
-      {/* Alerts */}
+      {/* alerts */}
       {err && (
         <div className="mb-5 rounded-lg border border-rose-700/40 bg-rose-900/20 px-4 py-2 text-rose-200">
           {err}
@@ -221,16 +199,14 @@ export default function CheckoutPage() {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-amber-200/90">
-            Please reduce the quantity of the items above or remove them to continue.
-          </p>
         </div>
       )}
 
-      <form onSubmit={place} className="grid gap-6 lg:grid-cols-[1fr,420px]">
-        {/* Billing / shipping column */}
-        <div className="space-y-6">
-          <div className="panel p-5 space-y-4">
+      {/* grid layout: form (8) + summary (4) */}
+      <form onSubmit={place} className="grid gap-6 md:grid-cols-12">
+        {/* left column */}
+        <div className="md:col-span-8 space-y-6">
+          <div className="form-card">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <input className="field" placeholder="First name" value={bill.firstName} onChange={updBill("firstName")} required />
               <input className="field" placeholder="Last name" value={bill.lastName} onChange={updBill("lastName")} required />
@@ -245,14 +221,9 @@ export default function CheckoutPage() {
             <textarea className="textarea" placeholder="Order notes (optional)" value={bill.notes} onChange={updBill("notes")} />
           </div>
 
-          {/* Ship to different address */}
-          <div className="panel p-5 space-y-3">
+          <div className="form-card">
             <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={shipDifferent}
-                onChange={(e) => setShipDifferent(e.target.checked)}
-              />
+              <input type="checkbox" checked={shipDifferent} onChange={(e) => setShipDifferent(e.target.checked)} />
               <span className="text-slate-200">Ship to a different address</span>
             </label>
 
@@ -273,21 +244,21 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Order summary column */}
-        <aside className="space-y-6">
-          <div className="panel p-5 space-y-4">
-            <h2 className="text-lg font-semibold text-white">Your order</h2>
+        {/* right column: summary */}
+        <aside className="md:col-span-4 space-y-6">
+          <div className="summary-card">
+            <h2 className="section-title">Your order</h2>
 
             <div className="space-y-2 text-sm text-slate-300">
               {items.map((it) => (
-                <div key={it.id} className="flex items-center justify-between">
+                <div key={it.id} className="row">
                   <div className="truncate">{it.name} × {it.quantity}</div>
                   <div className="shrink-0">{formatCurrency(it.price * it.quantity)}</div>
                 </div>
               ))}
             </div>
 
-            {/* Promo */}
+            {/* promo */}
             <div className="mt-2">
               {applied ? (
                 <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
@@ -315,49 +286,24 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* Totals */}
+            {/* totals */}
             <div className="mt-2 border-t border-slate-700/60 pt-2 text-sm space-y-1">
-              <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span>{formatCurrency(subtotal)}</span>
-              </div>
+              <div className="row"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
               {discount > 0 && (
-                <div className="flex justify-between text-emerald-300">
-                  <span>Promo discount</span>
-                  <span>-{formatCurrency(discount)}</span>
-                </div>
+                <div className="row text-emerald-300"><span>Promo discount</span><span>-{formatCurrency(discount)}</span></div>
               )}
-              <div className="flex justify-between">
-                <span>Shipping</span>
-                <span>{applied?.freeShipping ? "Free" : formatCurrency(shipping)}</span>
-              </div>
-              <div className="flex justify-between font-semibold text-white">
-                <span>Total</span>
-                <span>{formatCurrency(total)}</span>
-              </div>
+              <div className="row"><span>Shipping</span><span>{applied?.freeShipping ? "Free" : formatCurrency(shipping)}</span></div>
+              <div className="row font-semibold text-white"><span>Total</span><span>{formatCurrency(total)}</span></div>
             </div>
 
-            {/* Payment */}
+            {/* payment */}
             <div className="space-y-3 pt-2">
               <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="pay"
-                  value="COD"
-                  checked={bill.payment === "COD"}
-                  onChange={() => setBill((f) => ({ ...f, payment: "COD" }))}
-                />
+                <input type="radio" name="pay" value="COD" checked={bill.payment === "COD"} onChange={() => setBill((f) => ({ ...f, payment: "COD" }))} />
                 <span>Cash on delivery</span>
               </label>
-
               <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="pay"
-                  value="BANK"
-                  checked={bill.payment === "BANK"}
-                  onChange={() => setBill((f) => ({ ...f, payment: "BANK" }))}
-                />
+                <input type="radio" name="pay" value="BANK" checked={bill.payment === "BANK"} onChange={() => setBill((f) => ({ ...f, payment: "BANK" }))} />
                 <span>Direct bank transfer</span>
               </label>
 
@@ -382,13 +328,10 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* Terms & place order */}
+            {/* terms + place order */}
             <label className="mt-2 flex items-center gap-2">
               <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-              <span className="text-slate-200">
-                I agree to the{" "}
-                <Link href="/policies" className="underline">Terms & Conditions</Link>.
-              </span>
+              <span className="text-slate-200">I agree to the <Link href="/policies" className="underline">Terms & Conditions</Link>.</span>
             </label>
 
             <button className="btn-primary w-full mt-2" disabled={busy}>
