@@ -33,13 +33,7 @@ export default function ProductCard({ product }: Props) {
 
   const handleAddToCart = () => {
     add(
-      {
-        id: product.id,
-        name: product.name,
-        price: priceToUse,
-        image: img,
-        slug: product.slug,
-      },
+      { id: product.id, name: product.name, price: priceToUse, image: img, slug: product.slug },
       1
     );
     toast.success(`${product.name} added to cart!`);
@@ -101,9 +95,7 @@ export default function ProductCard({ product }: Props) {
 
       {/* price */}
       <div className="mt-2 flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
-        <p className="text-lg font-semibold text-white">
-          {formatCurrency(priceToUse)}
-        </p>
+        <p className="text-lg font-semibold text-white">{formatCurrency(priceToUse)}</p>
         {hasSale && (
           <span className="text-sm text-slate-400 line-through">
             {formatCurrency(product.price)}
@@ -114,9 +106,7 @@ export default function ProductCard({ product }: Props) {
       {/* CTA */}
       <div className="mt-3">
         <button
-          className={`btn-primary w-full ${
-            outOfStock ? "opacity-50 cursor-not-allowed" : ""
-          }`}
+          className={`btn-primary w-full ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
           disabled={outOfStock}
           onClick={handleAddToCart}
         >

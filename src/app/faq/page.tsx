@@ -1,3 +1,4 @@
+// src/app/faqs/page.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -9,7 +10,7 @@ export const metadata = {
 
 import FaqClient from "./FaqClient";
 
-/** JSON-LD for rich FAQ results (only top Qs to keep payload small) */
+/** JSON-LD for rich FAQ results (keep small) */
 const faqLd = {
   "@context": "https://schema.org",
   "@type": "FAQPage",
@@ -56,15 +57,12 @@ export default function FaqPage() {
           </a>{" "}
           or tap the WhatsApp bubble.
         </p>
-
-        {/* Client accordion */}
         <FaqClient />
       </section>
 
       {/* SEO: FAQ JSON-LD */}
       <script
         type="application/ld+json"
-        // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}
       />
     </>
