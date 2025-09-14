@@ -1,6 +1,7 @@
+// src/app/faqs/FaqClient.tsx
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 type QA = { q: string; a: string };
 
@@ -54,6 +55,10 @@ function Item({
   open: boolean;
   onToggle: (i: number) => void;
 }) {
+  // for smooth height animation without Tailwind purge issues
+  const panelRef = useRef<HTMLDivElement>(null);
+  const maxH = open && panelRef.current ? panelRef.current.scrollHeight + 24 : 0; // padding buffer
+
   return (
     <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] px-4 py-4">
       <button
@@ -65,7 +70,7 @@ function Item({
       >
         <span className="font-medium text-slate-100">{qa.q}</span>
 
-        {/* SMALL ARROW BUTTON (locked size) */}
+        {/* SMALL ARROW BUTTON — uses .faq-icon from globals.css to lock size */}
         <span className="faq-icon inline-flex items-center justify-center">
           <svg
             viewBox="0 0 24 24"
@@ -84,12 +89,12 @@ function Item({
         </span>
       </button>
 
-      {/* Smooth expand/collapse (uses safelisted classes) */}
+      {/* Answer panel: inline maxHeight to avoid purge, smooth transition */}
       <div
         id={`faq-panel-${index}`}
-        className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out ${
-          open ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
-        }`}
+        ref={panelRef}
+        className="overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out"
+        style={{ maxHeight: maxH, opacity: open ? 1 : 0 }}
       >
         <p className="pt-3 text-sm text-slate-300 leading-relaxed">{qa.a}</p>
       </div>
@@ -98,7 +103,7 @@ function Item({
 }
 
 export default function FaqClient() {
-  // Accordion: only one open at a time (change to Set if you want multi-open)
+  // Accordion: one open at a time. Change to Set if you want multi-open.
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
