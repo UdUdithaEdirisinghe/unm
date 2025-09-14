@@ -1,4 +1,3 @@
-// src/app/faqs/FaqClient.tsx
 "use client";
 
 import { useState } from "react";
@@ -45,13 +44,16 @@ const faqs: QA[] = [
 ];
 
 function Chevron({ open }: { open: boolean }) {
+  // Fixed px size so global CSS can't blow it up
   return (
     <svg
       aria-hidden="true"
       width="18"
       height="18"
       viewBox="0 0 24 24"
-      className={`text-slate-300 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+      className={`text-slate-300 transition-transform duration-200 ${
+        open ? "rotate-180" : ""
+      }`}
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
@@ -76,17 +78,23 @@ function Item({
 }) {
   return (
     <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)]">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={`faq-panel-${index}`}
-        onClick={() => onToggle(index)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left"
-      >
+      {/* Header row: text on the left (read-only), arrow button on the right (controls panel) */}
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
         <span className="font-medium text-slate-100">{qa.q}</span>
-        <Chevron open={open} />
-      </button>
 
+        <button
+          type="button"
+          aria-label={open ? "Collapse answer" : "Expand answer"}
+          aria-expanded={open}
+          aria-controls={`faq-panel-${index}`}
+          onClick={() => onToggle(index)}
+          className="inline-flex items-center justify-center rounded-md border border-slate-700/60 bg-transparent p-1.5 hover:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-brand-accent/40"
+        >
+          <Chevron open={open} />
+        </button>
+      </div>
+
+      {/* Panel with smooth open/close (no layout jumps) */}
       <div
         id={`faq-panel-${index}`}
         className={`px-4 pb-3 text-slate-300 transition-[grid-template-rows] ${
@@ -102,18 +110,22 @@ function Item({
 }
 
 export default function FaqClient() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
+  // Support multiple open items because each arrow is intentional.
+  const [openSet, setOpenSet] = useState<Set<number>>(() => new Set([0]));
+
+  const toggle = (idx: number) => {
+    setOpenSet((cur) => {
+      const next = new Set(cur);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
 
   return (
     <div className="space-y-3">
       {faqs.map((qa, i) => (
-        <Item
-          key={qa.q}
-          qa={qa}
-          index={i}
-          open={openIndex === i}
-          onToggle={(idx) => setOpenIndex((cur) => (cur === idx ? null : idx))}
-        />
+        <Item key={qa.q} qa={qa} index={i} open={openSet.has(i)} onToggle={toggle} />
       ))}
     </div>
   );
