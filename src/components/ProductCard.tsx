@@ -12,29 +12,37 @@ type Props = { product: Product };
 export default function ProductCard({ product }: Props) {
   const { add } = useCart();
 
-  const rawImg = (typeof product.image === "string" ? product.image : "") || "/placeholder.png";
-  const img =
-    rawImg.startsWith("/") || /^https?:\/\//.test(rawImg) ? rawImg : `/${rawImg}`;
+  const primary = ((): string => {
+    const src =
+      (Array.isArray(product.images) && product.images[0]) ||
+      product.image ||
+      "/placeholder.png";
+    const s = String(src || "");
+    return s.startsWith("/") || /^https?:\/\//.test(s) ? s : `/${s}`;
+  })();
 
   const salePrice = product.salePrice;
-  const stock = Number(product.stock ?? 0);
+  const stock = product.stock ?? 0;
   const outOfStock = stock <= 0;
-  const hasSale = typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
+  const hasSale =
+    typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
 
   const priceToUse = hasSale ? (salePrice as number) : product.price;
   const discountPct =
-    hasSale && salePrice ? Math.round(((product.price - salePrice) / product.price) * 100) : 0;
+    hasSale && salePrice
+      ? Math.round(((product.price - salePrice) / product.price) * 100)
+      : 0;
 
   const handleAddToCart = () => {
     add(
-      { id: product.id, name: product.name, price: priceToUse, image: img, slug: product.slug },
+      { id: product.id, name: product.name, price: priceToUse, image: primary, slug: product.slug },
       1
     );
     toast.success(`${product.name} added to cart!`);
   };
 
   return (
-    <div className="relative flex flex-col rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-3">
+    <div className="relative flex flex-col card p-3">
       {/* badges */}
       <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
         {outOfStock && (
@@ -54,9 +62,9 @@ export default function ProductCard({ product }: Props) {
         href={`/products/${product.slug}`}
         className="block rounded-md overflow-hidden border border-slate-800/60 bg-[rgba(10,15,28,0.4)]"
       >
-        <div className="aspect-[4/3] flex items-center justify-center">
+        <div className="aspect-4-3 flex items-center justify-center">
           <Image
-            src={img}
+            src={primary}
             alt={product.name}
             width={600}
             height={450}
@@ -70,18 +78,16 @@ export default function ProductCard({ product }: Props) {
       <div className="mt-3 flex-1">
         <Link
           href={`/products/${product.slug}`}
-          className="block font-medium text-white name-2 text-[0.95rem]/5"
+          className="block text-white font-medium leading-snug line-clamp-2"
           title={product.name}
         >
           {product.name}
         </Link>
         {product.brand && (
-          <div className="text-xs text-slate-400 truncate">{product.brand}</div>
+          <div className="mt-0.5 text-xs text-slate-400 truncate">{product.brand}</div>
         )}
         {(product as any).category && (
-          <div className="text-xs text-slate-500 truncate">
-            {(product as any).category}
-          </div>
+          <div className="text-xs text-slate-500 truncate">{(product as any).category}</div>
         )}
       </div>
 
@@ -95,7 +101,7 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* button */}
+      {/* btn */}
       <div className="mt-3">
         <button
           className={`btn-primary w-full ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
