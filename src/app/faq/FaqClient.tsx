@@ -44,7 +44,7 @@ const faqs: QA[] = [
 ];
 
 function Chevron({ open }: { open: boolean }) {
-  // Fixed px size so global CSS can't blow it up
+  // Fixed size so global SVG rules can’t blow it up
   return (
     <svg
       aria-hidden="true"
@@ -78,46 +78,42 @@ function Item({
 }) {
   return (
     <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)]">
-      {/* Header row: text on the left (read-only), arrow button on the right (controls panel) */}
+      {/* Header row: text on left (read-only), arrow button on right (toggles) */}
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <span className="font-medium text-slate-100">{qa.q}</span>
 
         <button
           type="button"
-          aria-label={open ? "Collapse answer" : "Expand answer"}
+          aria-label={open ? "Hide answer" : "Show answer"}
           aria-expanded={open}
           aria-controls={`faq-panel-${index}`}
           onClick={() => onToggle(index)}
-          className="inline-flex items-center justify-center rounded-md border border-slate-700/60 bg-transparent p-1.5 hover:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-brand-accent/40"
+          className="inline-flex items-center justify-center rounded-md border border-slate-700/60 p-1.5 hover:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-brand-accent/40"
         >
           <Chevron open={open} />
         </button>
       </div>
 
-      {/* Panel with smooth open/close (no layout jumps) */}
+      {/* Panel: smooth max-height animation, hidden by default */}
       <div
         id={`faq-panel-${index}`}
-        className={`px-4 pb-3 text-slate-300 transition-[grid-template-rows] ${
-          open ? "grid grid-rows-[1fr]" : "grid grid-rows-[0fr]"
-        }`}
+        className="px-4 pb-3 text-slate-300 overflow-hidden transition-[max-height] duration-300 ease-in-out"
+        style={{ maxHeight: open ? 400 : 0 }} // <= slide open/closed; adjust height if needed
       >
-        <div className="overflow-hidden">
-          <p className="pt-1">{qa.a}</p>
-        </div>
+        <p className="pt-1">{qa.a}</p>
       </div>
     </div>
   );
 }
 
 export default function FaqClient() {
-  // Support multiple open items because each arrow is intentional.
-  const [openSet, setOpenSet] = useState<Set<number>>(() => new Set([0]));
+  // Start with all closed; arrow controls each one
+  const [openSet, setOpenSet] = useState<Set<number>>(new Set());
 
   const toggle = (idx: number) => {
     setOpenSet((cur) => {
       const next = new Set(cur);
-      if (next.has(idx)) next.delete(idx);
-      else next.add(idx);
+      next.has(idx) ? next.delete(idx) : next.add(idx);
       return next;
     });
   };
