@@ -23,5 +23,5 @@ module.exports = {
       },
     },
   },
-  plugins: [], // ✅ No line-clamp plugin
+  plugins: [],
 };
