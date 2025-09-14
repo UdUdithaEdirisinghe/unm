@@ -6,12 +6,21 @@ import type { Product } from "../lib/products";
 import ProductCard from "./ProductCard";
 import SearchBar from "./SearchBar";
 
+/* ---------- helpers ---------- */
+function prettyLabel(slug: string) {
+  return (slug || "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 export default function ProductsClient({
   products,
   initialQuery,
+  initialCat,
 }: {
   products: Product[];
   initialQuery: string;
+  initialCat?: string;
 }) {
   // show 12 initially; click adds 12 more
   const [visibleCount, setVisibleCount] = useState(12);
@@ -22,11 +31,16 @@ export default function ProductsClient({
   );
   const hasMore = visibleCount < products.length;
 
+  const headerTitle =
+    initialCat && initialCat.trim().length > 0
+      ? prettyLabel(initialCat)
+      : "Products";
+
   return (
     <div className="space-y-6">
       {/* Header + search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold text-white">Products</h1>
+        <h1 className="text-xl font-semibold text-white">{headerTitle}</h1>
         <SearchBar
           initial={initialQuery}
           placeholder="Search products…"
@@ -34,7 +48,7 @@ export default function ProductsClient({
         />
       </div>
 
-      {/* Grid: 2 cols on mobile, 3 on lg, 4 on xl */}
+      {/* Grid */}
       <div className="grid gap-4 grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {visible.map((p) => (
           <ProductCard key={p.id} product={p} />
@@ -53,9 +67,13 @@ export default function ProductsClient({
         </div>
       )}
 
-      {/* No results message (only when searching) */}
-      {initialQuery && products.length === 0 && (
-        <p className="text-slate-400">No matches for “{initialQuery}”.</p>
+      {/* No results message */}
+      {products.length === 0 && (
+        <p className="text-slate-400">
+          {initialQuery
+            ? `No matches for “${initialQuery}”.`
+            : "No products found in this category."}
+        </p>
       )}
     </div>
   );
