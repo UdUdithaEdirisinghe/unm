@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Navbar from "../components/Navbar";
-import Footer from "../components/footer";
+import Footer from "../components/Footer";
 import { CartProvider } from "../components/cart/CartProvider";
 import FloatingWhatsApp from "../components/FloatingWhatsApp";
 import ToastProvider from "../components/ui/ToastProvider";
