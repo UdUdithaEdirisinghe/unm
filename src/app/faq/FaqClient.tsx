@@ -1,4 +1,3 @@
-// src/app/faq/FaqClient.tsx
 "use client";
 
 import { useState } from "react";
@@ -65,22 +64,27 @@ function Item({
         className="w-full flex items-center justify-between gap-3 text-left"
       >
         <span className="font-medium text-slate-100">{qa.q}</span>
-        {/* Chevron arrow */}
-        <svg
-          className={`h-5 w-5 shrink-0 text-slate-300 transition-transform duration-300 ${
-            open ? "rotate-180" : "rotate-0"
-          }`}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden="true"
-        >
-          <path d="M6 9l6 6 6-6" />
-        </svg>
+
+        {/* SMALL ARROW BUTTON (locked size) */}
+        <span className="faq-icon inline-flex items-center justify-center">
+          <svg
+            viewBox="0 0 24 24"
+            className={`w-5 h-5 flex-none text-slate-300 transition-transform duration-300 ${
+              open ? "rotate-180" : "rotate-0"
+            }`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </span>
       </button>
 
-      {/* Answer panel */}
+      {/* Smooth expand/collapse (uses safelisted classes) */}
       <div
         id={`faq-panel-${index}`}
         className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out ${
@@ -94,10 +98,11 @@ function Item({
 }
 
 export default function FaqClient() {
+  // Accordion: only one open at a time (change to Set if you want multi-open)
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {faqs.map((qa, i) => (
         <Item
           key={qa.q}

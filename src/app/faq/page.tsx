@@ -1,4 +1,3 @@
-// src/app/faq/page.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -10,7 +9,6 @@ export const metadata = {
 
 import FaqClient from "./FaqClient";
 
-/** JSON-LD for SEO */
 const faqLd = {
   "@context": "https://schema.org",
   "@type": "FAQPage",
@@ -49,7 +47,9 @@ export default function FaqPage() {
   return (
     <>
       <section className="mx-auto max-w-3xl px-4 py-12">
-        <h1 className="text-3xl font-semibold text-white">Frequently Asked Questions</h1>
+        <h1 className="text-3xl font-semibold text-white">
+          Frequently Asked Questions
+        </h1>
         <p className="mt-4 mb-6 text-slate-300">
           Can’t find what you’re looking for?{" "}
           <a href="/contact" className="text-brand-accent hover:underline">
@@ -58,13 +58,12 @@ export default function FaqPage() {
           or tap the WhatsApp bubble.
         </p>
 
-        {/* Add spacing before FAQ list */}
+        {/* Extra space before the first question */}
         <div className="mt-8">
           <FaqClient />
         </div>
       </section>
 
-      {/* SEO JSON-LD */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqLd) }}

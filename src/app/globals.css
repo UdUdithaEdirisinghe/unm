@@ -96,4 +96,19 @@ h1, h2, h3, h4 { @apply text-white; }
 *::-webkit-scrollbar-thumb {
   background: #475569; border-radius: 999px;
 }
-*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-track { background: transparent; } 
+
+/* ---------- FAQ specific fixes ---------- */
+
+/* Lock FAQ chevron size (prevents giant V) */
+.faq-icon,
+.faq-icon svg {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px; /* don’t grow/shrink */
+}
+
+/* Add spacing between intro text and first FAQ item */
+.faq-intro {
+  margin-bottom: 1.5rem; /* ~24px */
+}
