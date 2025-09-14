@@ -52,7 +52,7 @@ export default function ProductsClient({
     <div className="space-y-6">
       {/* Header + search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2x1 font-semibold text-white">{title}</h1>
+        <h1 className="text-x1 font-semibold text-white">{title}</h1>
         <SearchBar
           initial={initialQuery}
           placeholder="Search products…"
