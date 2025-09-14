@@ -31,10 +31,9 @@ export default function ProductsClient({
   );
   const hasMore = visibleCount < products.length;
 
-  const headerTitle =
-    initialCat && initialCat.trim().length > 0
-      ? prettyLabel(initialCat)
-      : "Products";
+  const headerTitle = initialCat
+    ? `Showing: ${prettyLabel(initialCat)}`
+    : "Products";
 
   return (
     <div className="space-y-6">
