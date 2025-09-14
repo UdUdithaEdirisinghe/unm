@@ -13,6 +13,41 @@ function prettyLabel(slug: string) {
     .replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
+function headlineFor(slug?: string) {
+  if (!slug) return "Browse the Best Tech Deals in Sri Lanka";
+  const label = prettyLabel(slug);
+
+  // Map a few known categories to nicer public-facing labels
+  const nicer: Record<string, string> = {
+    "power-banks": "Power Banks",
+    chargers: "Chargers & Adapters",
+    cables: "Cables",
+    bags: "Bags & Sleeves",
+    audio: "Audio",
+  };
+  const display = nicer[slug] ?? label;
+
+  return `Best prices on ${display} in Sri Lanka`;
+}
+
+function subtitleFor(slug?: string) {
+  if (!slug) return "Everything you need — curated, in-stock, and ready to ship.";
+  switch (slug) {
+    case "power-banks":
+      return "Stay powered up, anywhere.";
+    case "chargers":
+      return "Fast, safe charging for every device.";
+    case "cables":
+      return "Durable, high-speed connectivity.";
+    case "bags":
+      return "Protective sleeves and carry solutions.";
+    case "audio":
+      return "Crisp sound. Clear calls. Everyday comfort.";
+    default:
+      return "Quality accessories at honest prices.";
+  }
+}
+
 export default function ProductsClient({
   products,
   initialQuery,
@@ -20,7 +55,7 @@ export default function ProductsClient({
 }: {
   products: Product[];
   initialQuery: string;
-  initialCat?: string;
+  initialCat?: string; // slug (e.g., "power-banks")
 }) {
   // show 12 initially; click adds 12 more
   const [visibleCount, setVisibleCount] = useState(12);
@@ -31,15 +66,21 @@ export default function ProductsClient({
   );
   const hasMore = visibleCount < products.length;
 
-  const headerTitle = initialCat
-    ? `Showing: ${prettyLabel(initialCat)}`
-    : "Products";
+  const title = headlineFor(initialCat);
+  const baseSubtitle = subtitleFor(initialCat);
+  const subtitle =
+    initialQuery?.trim()
+      ? `${baseSubtitle} (filtered by “${initialQuery.trim()}”).`
+      : baseSubtitle;
 
   return (
     <div className="space-y-6">
       {/* Header + search */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-xl font-semibold text-white">{headerTitle}</h1>
+        <div>
+          <h1 className="text-xl font-semibold text-white">{title}</h1>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">{subtitle}</p>
+        </div>
         <SearchBar
           initial={initialQuery}
           placeholder="Search products…"
