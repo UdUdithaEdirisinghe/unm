@@ -4,18 +4,23 @@ import Link from "next/link";
 import { useCart } from "../../components/cart/CartProvider";
 import { formatCurrency } from "../../lib/format";
 
+const SHIPPING_FEE = 350;
+
 export default function CartPage() {
   const { items, setQty, remove, clear, subtotal } = useCart();
 
-  const SHIPPING_FEE = 350;
   const total = subtotal + (items.length ? SHIPPING_FEE : 0);
 
   if (items.length === 0) {
     return (
       <div className="mx-auto w-full max-w-4xl px-4 py-10 text-center">
         <h1 className="text-2xl font-bold mb-2">Your cart is empty</h1>
-        <p className="text-slate-400 mb-6">Add something you love and come back here.</p>
-        <Link href="/products" className="btn-primary">Shop now</Link>
+        <p className="text-slate-400 mb-6">
+          Add something you love and come back here.
+        </p>
+        <Link href="/products" className="btn-primary">
+          Shop now
+        </Link>
       </div>
     );
   }
@@ -29,12 +34,14 @@ export default function CartPage() {
         {items.map((it) => (
           <div
             key={it.id}
-            className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4"
+            className="panel p-4"
           >
             <div className="grid grid-cols-1 items-center gap-4 sm:grid-cols-12">
               <div className="sm:col-span-6">
-                <div className="font-medium truncate">{it.name}</div>
-                <div className="text-sm text-slate-400 truncate">{it.slug}</div>
+                <div className="font-medium truncate text-white">{it.name}</div>
+                {it.slug ? (
+                  <div className="text-sm text-slate-400 truncate">{it.slug}</div>
+                ) : null}
               </div>
 
               <div className="sm:col-span-2 text-sm text-slate-300">
@@ -82,9 +89,9 @@ export default function CartPage() {
         ))}
       </div>
 
-      {/* Totals */}
+      {/* Totals & Actions */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4">
+        <div className="panel p-4">
           <div className="flex items-center justify-between">
             <span className="text-slate-300">Subtotal</span>
             <span className="font-semibold">{formatCurrency(subtotal)}</span>
@@ -102,11 +109,17 @@ export default function CartPage() {
         </div>
 
         <div className="flex items-center justify-end gap-2">
-          <button className="btn-ghost" onClick={clear}>Clear cart</button>
-          <Link href="/products" className="btn-secondary">Continue shopping</Link>
-          <Link href="/checkout" className="btn-primary">Proceed to checkout</Link>
+          <button className="btn-ghost" onClick={clear}>
+            Clear cart
+          </button>
+          <Link href="/products" className="btn-secondary">
+            Continue shopping
+          </Link>
+          <Link href="/checkout" className="btn-primary">
+            Proceed to checkout
+          </Link>
         </div>
       </div>
     </div>
   );
-} 
+}
