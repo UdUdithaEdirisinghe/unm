@@ -6,7 +6,6 @@ import { useCart } from "../components/cart/CartProvider";
 import type { Product } from "../lib/products";
 import { formatCurrency } from "../lib/format";
 import { toast } from "react-hot-toast";
-import { FaWhatsapp } from "react-icons/fa";
 
 type Props = { product: Product };
 
@@ -106,25 +105,15 @@ export default function ProductCard({ product }: Props) {
         )}
       </div>
 
-      {/* 🛒 buttons */}
-      <div className="mt-3 flex items-center gap-2">
+      {/* 🛒 add to cart button */}
+      <div className="mt-3">
         <button
-          className={`btn-primary flex-1 ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
+          className={`btn-primary w-full ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
           disabled={outOfStock}
           onClick={handleAddToCart}
         >
           {outOfStock ? "Unavailable" : "Add to Cart"}
         </button>
-
-        {/* WhatsApp quick-buy */}
-        <Link
-          href={`https://wa.me/94760703523?text=I'm interested in ${product.name}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500 hover:bg-green-600 text-white"
-        >
-          <FaWhatsapp size={20} />
-        </Link>
       </div>
     </div>
   );
