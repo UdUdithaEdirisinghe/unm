@@ -5,6 +5,7 @@ module.exports = {
     "./src/components//*.{js,ts,jsx,tsx}",
     "./src/app//*.{js,ts,jsx,tsx}",
   ],
+
   theme: {
     extend: {
       colors: {
@@ -17,30 +18,35 @@ module.exports = {
       },
     },
   },
-  // 👇 Safelist anything used dynamically so Cart/Checkout/FAQ don’t break
+
+  // Keep dynamic/rarely-used utility classes so animations and panels don't break
   safelist: [
-    // rotations / opacity used in FAQ chevrons and transitions
+    // FAQ chevron + general rotations/opacity
     "rotate-0",
     "rotate-180",
     "opacity-0",
     "opacity-100",
 
-    // max-height transitions used for accordions
-    "max-h-0",
-    "max-h-40",
-    "max-h-96",
+    // Accordion transitions (both old and new versions you tried)
     "transition-all",
     "transition-[max-height]",
     "transition-[max-height,opacity]",
+    "transition-[grid-template-rows]",
     "duration-300",
+    "ease-in-out",
 
-    // (If you kept the grid-rows trick anywhere)
+    // Heights used for expand/collapse
+    "max-h-0",
+    "max-h-40",
+    "max-h-96",
+
+    // Grid rows trick (if used anywhere)
     "grid",
     "grid-rows-[0fr]",
     "grid-rows-[1fr]",
-    "transition-[grid-template-rows]",
   ],
+
   plugins: [
-    require("@tailwindcss/line-clamp"), // needed by ProductCard multi-line names
+    require("@tailwindcss/line-clamp"), // used by ProductCard multi-line titles
   ],
 };

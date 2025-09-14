@@ -55,7 +55,7 @@ export default function CheckoutPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // NEW: shortages from server
+  // Stock adjustments from server
   const [shortages, setShortages] = useState<Shortage[] | null>(null);
 
   // Totals
@@ -165,16 +165,13 @@ export default function CheckoutPage() {
           paymentMethod: bill.payment,
           promoCode: applied?.code,
           bankSlipUrl,
-          // totals context for server; server recomputes/validates anyway
           shipping,
-          // customer + shipping
           customer: bill,
           shipDifferent,
           shippingAddress,
         }),
       });
 
-      // Handle stock shortages gracefully (HTTP 409 from server)
       if (r.status === 409) {
         const data = await r.json().catch(() => ({}));
         const arr = Array.isArray(data?.shortages) ? data.shortages : [];
@@ -194,7 +191,6 @@ export default function CheckoutPage() {
         return;
       }
 
-      // success
       clear();
       router.push(`/thank-you?order=${data.orderId}`);
     } catch (e: any) {
@@ -205,8 +201,8 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold">Checkout</h1>
+    <section className="mx-auto w-full max-w-5xl px-4 py-8">
+      <h1 className="mb-6 text-2xl font-bold text-white">Checkout</h1>
 
       {/* General error */}
       {err && (
@@ -215,7 +211,7 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* NEW: shortages panel */}
+      {/* Stock shortages */}
       {shortages && shortages.length > 0 && (
         <div className="mb-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-amber-100">
           <div className="font-semibold mb-1">Item availability</div>
@@ -229,8 +225,7 @@ export default function CheckoutPage() {
             ))}
           </ul>
           <p className="mt-2 text-xs text-amber-200/90">
-            Please reduce the quantity of the items above or remove them to
-            continue.
+            Please reduce the quantity of the items above or remove them to continue.
           </p>
         </div>
       )}
@@ -239,133 +234,41 @@ export default function CheckoutPage() {
         {/* Billing details */}
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <input
-              className="field"
-              placeholder="First name"
-              value={bill.firstName}
-              onChange={updBill("firstName")}
-              required
-            />
-            <input
-              className="field"
-              placeholder="Last name"
-              value={bill.lastName}
-              onChange={updBill("lastName")}
-              required
-            />
+            <input className="field" placeholder="First name" value={bill.firstName} onChange={updBill("firstName")} required />
+            <input className="field" placeholder="Last name" value={bill.lastName} onChange={updBill("lastName")} required />
           </div>
 
-          <input
-            className="field"
-            type="email"
-            placeholder="Email"
-            value={bill.email}
-            onChange={updBill("email")}
-            required
-          />
+          <input className="field" type="email" placeholder="Email" value={bill.email} onChange={updBill("email")} required />
 
-          <input
-            className="field"
-            type="tel"
-            placeholder="Phone"
-            value={bill.phone}
-            pattern="[0-9]{10}"
-            title="Enter a valid 10-digit phone number"
-            onChange={updBill("phone")}
-            required
-          />
+          <input className="field" type="tel" placeholder="Phone" value={bill.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updBill("phone")} required />
 
-          <input
-            className="field"
-            placeholder="Street address"
-            value={bill.address}
-            onChange={updBill("address")}
-            required
-          />
+          <input className="field" placeholder="Street address" value={bill.address} onChange={updBill("address")} required />
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <input
-              className="field"
-              placeholder="Town / City"
-              value={bill.city}
-              onChange={updBill("city")}
-              required
-            />
-            <input
-              className="field"
-              placeholder="Postcode / ZIP (optional)"
-              value={bill.postal}
-              onChange={updBill("postal")}
-            />
+            <input className="field" placeholder="Town / City" value={bill.city} onChange={updBill("city")} required />
+            <input className="field" placeholder="Postcode / ZIP (optional)" value={bill.postal} onChange={updBill("postal")} />
           </div>
 
-          <textarea
-            className="textarea"
-            placeholder="Order notes (optional)"
-            value={bill.notes}
-            onChange={updBill("notes")}
-          />
+          <textarea className="textarea" placeholder="Order notes (optional)" value={bill.notes} onChange={updBill("notes")} />
 
           {/* Ship to different address */}
-          <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 space-y-3">
+          <div className="panel p-4 space-y-3">
             <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={shipDifferent}
-                onChange={(e) => setShipDifferent(e.target.checked)}
-              />
+              <input type="checkbox" checked={shipDifferent} onChange={(e) => setShipDifferent(e.target.checked)} />
               <span className="text-slate-200">Ship to a different address</span>
             </label>
 
             {shipDifferent && (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <input
-                    className="field"
-                    placeholder="Recipient first name"
-                    value={ship.firstName}
-                    onChange={updShip("firstName")}
-                    required
-                  />
-                  <input
-                    className="field"
-                    placeholder="Recipient last name"
-                    value={ship.lastName}
-                    onChange={updShip("lastName")}
-                    required
-                  />
+                  <input className="field" placeholder="Recipient first name" value={ship.firstName} onChange={updShip("firstName")} required />
+                  <input className="field" placeholder="Recipient last name" value={ship.lastName} onChange={updShip("lastName")} required />
                 </div>
-                <input
-                  className="field"
-                  type="tel"
-                  placeholder="Recipient phone"
-                  value={ship.phone}
-                  pattern="[0-9]{10}"
-                  title="Enter a valid 10-digit phone number"
-                  onChange={updShip("phone")}
-                  required
-                />
-                <input
-                  className="field"
-                  placeholder="Street address"
-                  value={ship.address}
-                  onChange={updShip("address")}
-                  required
-                />
+                <input className="field" type="tel" placeholder="Recipient phone" value={ship.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updShip("phone")} required />
+                <input className="field" placeholder="Street address" value={ship.address} onChange={updShip("address")} required />
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <input
-                    className="field"
-                    placeholder="Town / City"
-                    value={ship.city}
-                    onChange={updShip("city")}
-                    required
-                  />
-                  <input
-                    className="field"
-                    placeholder="Postcode / ZIP (optional)"
-                    value={ship.postal}
-                    onChange={updShip("postal")}
-                  />
+                  <input className="field" placeholder="Town / City" value={ship.city} onChange={updShip("city")} required />
+                  <input className="field" placeholder="Postcode / ZIP (optional)" value={ship.postal} onChange={updShip("postal")} />
                 </div>
               </div>
             )}
@@ -373,18 +276,14 @@ export default function CheckoutPage() {
         </div>
 
         {/* Summary / Payment */}
-        <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 space-y-4">
-          <h2 className="text-lg font-semibold">Your order</h2>
+        <div className="panel p-4 space-y-4">
+          <h2 className="text-lg font-semibold text-white">Your order</h2>
 
           <div className="space-y-2 text-sm text-slate-300">
             {items.map((it) => (
               <div key={it.id} className="flex items-center justify-between">
-                <div className="truncate">
-                  {it.name} × {it.quantity}
-                </div>
-                <div className="shrink-0">
-                  {formatCurrency(it.price * it.quantity)}
-                </div>
+                <div className="truncate">{it.name} × {it.quantity}</div>
+                <div className="shrink-0">{formatCurrency(it.price * it.quantity)}</div>
               </div>
             ))}
           </div>
@@ -435,11 +334,9 @@ export default function CheckoutPage() {
             )}
             <div className="flex justify-between">
               <span>Shipping</span>
-              <span>
-                {applied?.freeShipping ? "Free" : formatCurrency(shipping)}
-              </span>
+              <span>{applied?.freeShipping ? "Free" : formatCurrency(shipping)}</span>
             </div>
-            <div className="flex justify-between font-semibold">
+            <div className="flex justify-between font-semibold text-white">
               <span>Total</span>
               <span>{formatCurrency(total)}</span>
             </div>
@@ -471,23 +368,14 @@ export default function CheckoutPage() {
 
             {bill.payment === "BANK" && (
               <div className="space-y-3 rounded-lg border border-slate-700/60 p-3">
-                {/* Demo bank details */}
-                <div className="text-sm">
-                  <div>
-                    <b>Bank:</b> Sampath Bank PLC
-                  </div>
-                  <div>
-                    <b>Branch:</b> Colombo Fort
-                  </div>
-                  <div>
-                    <b>Account No:</b> 001234567890
-                  </div>
-                  <div>
-                    <b>Contact:</b> 0771234567
-                  </div>
+                <div className="text-sm text-slate-200">
+                  <div><b>Bank:</b> Sampath Bank PLC</div>
+                  <div><b>Branch:</b> Colombo Fort</div>
+                  <div><b>Account No:</b> 001234567890</div>
+                  <div><b>Contact:</b> 0771234567</div>
                 </div>
                 <div>
-                  <label className="block text-sm mb-1">Upload bank slip</label>
+                  <label className="block text-sm mb-1 text-slate-200">Upload bank slip</label>
                   <input
                     type="file"
                     accept="image/*,application/pdf"
@@ -499,7 +387,7 @@ export default function CheckoutPage() {
             )}
           </div>
 
-          {/* Terms & Conditions – use Link to avoid hard reload */}
+          {/* Terms & Place order */}
           <label className="mt-2 flex items-center gap-2">
             <input
               type="checkbox"
@@ -510,8 +398,7 @@ export default function CheckoutPage() {
               I agree to the{" "}
               <Link href="/policies" className="underline">
                 Terms & Conditions
-              </Link>
-              .
+              </Link>.
             </span>
           </label>
 
@@ -520,6 +407,6 @@ export default function CheckoutPage() {
           </button>
         </div>
       </form>
-    </div>
+    </section>
   );
 }
