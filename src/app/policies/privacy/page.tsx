@@ -20,7 +20,7 @@ export default function PrivacyPolicy() {
         <h3>Security</h3>
         <p>
           We use modern security practices and reputable payment processors. You can request
-          a copy or deletion of your personal data by contacting us.
+          a copy or deletion of your personal data by contacting us hi.
         </p>
       </div>
     </section>
