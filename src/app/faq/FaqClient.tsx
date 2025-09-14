@@ -1,4 +1,3 @@
-// src/app/faqs/FaqClient.tsx
 "use client";
 
 import { useState } from "react";
@@ -20,7 +19,7 @@ const faqs: QA[] = [
   },
   {
     q: "How long will delivery take?",
-    a: "Colombo/Greater Colombo: 1–3 working days. Other districts: 2–5 working days. Pre-orders ship on/after the indicated date.",
+    a: "Colombo/Greater Colombo: 1–3 working days. Other districts: 2–5 working days. Pre-orders ship on or after the indicated date.",
   },
   {
     q: "What payment methods do you accept?",
@@ -44,28 +43,6 @@ const faqs: QA[] = [
   },
 ];
 
-/** Minimal chevron (no box), rotates when open */
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg
-      aria-hidden="true"
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      className={`text-slate-300 transition-transform duration-300 ${
-        open ? "rotate-180" : ""
-      }`}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
-
 function Item({
   qa,
   index,
@@ -78,56 +55,57 @@ function Item({
   onToggle: (i: number) => void;
 }) {
   return (
-    <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] px-4 py-4">
-      {/* Header row: text left; arrow (no box) right */}
-      <div className="flex items-center justify-between gap-3">
+    <div className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.6)]">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={`faq-panel-${index}`}
+        onClick={() => onToggle(index)}
+        className="w-full flex items-center justify-between gap-3 px-4 py-4 text-left"
+      >
         <span className="font-medium text-slate-100">{qa.q}</span>
-        <button
-          type="button"
-          aria-label={open ? "Hide answer" : "Show answer"}
-          aria-expanded={open}
-          aria-controls={`faq-panel-${index}`}
-          onClick={() => onToggle(index)}
-          className="inline-flex items-center justify-center p-1.5 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-accent/40 rounded-md"
+        {/* Chevron */}
+        <svg
+          className={`h-5 w-5 shrink-0 text-slate-300 transition-transform ${
+            open ? "rotate-180" : "rotate-0"
+          }`}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          aria-hidden="true"
         >
-          <Chevron open={open} />
-        </button>
-      </div>
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
 
-      {/* Panel: hidden by default; slides open/closed smoothly */}
+      {/* Answer */}
       <div
         id={`faq-panel-${index}`}
-        className="overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out"
-        style={{ maxHeight: open ? 500 : 0, opacity: open ? 1 : 0 }}
+        className={`px-4 pb-4 text-slate-300 transition-[grid-template-rows] ${
+          open ? "grid grid-rows-[1fr]" : "grid grid-rows-[0fr]"
+        }`}
       >
-        <p className="pt-3 text-sm text-slate-300 leading-relaxed">{qa.a}</p>
+        <div className="overflow-hidden">
+          <p className="pt-2">{qa.a}</p>
+        </div>
       </div>
     </div>
   );
 }
 
 export default function FaqClient() {
-  // Multiple items can be open at once
-  const [openSet, setOpenSet] = useState<Set<number>>(() => new Set());
-
-  const toggle = (idx: number) => {
-    setOpenSet((cur) => {
-      const next = new Set(cur);
-      next.has(idx) ? next.delete(idx) : next.add(idx);
-      return next;
-    });
-  };
+  const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
-    // Extra breathing room between cards
-    <div className="space-y-6">
+    <div className="space-y-4">
       {faqs.map((qa, i) => (
         <Item
           key={qa.q}
           qa={qa}
           index={i}
-          open={openSet.has(i)}
-          onToggle={toggle}
+          open={openIndex === i}
+          onToggle={(idx) => setOpenIndex((cur) => (cur === idx ? null : idx))}
         />
       ))}
     </div>
