@@ -32,7 +32,22 @@ function isOnSale(p: Product) {
   return promoCode || promoDiscount || discount;
 }
 
-/** Canonicalize any category text from DB/names/slugs into a stable slug */
+/* ---------- category helpers ---------- */
+function slugify(s: string) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+function prettyLabel(slug: string) {
+  return (slug || "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
 function normalizeCategoryName(raw: string): string {
   const s = (raw || "").trim().toLowerCase();
 
@@ -41,10 +56,12 @@ function normalizeCategoryName(raw: string): string {
   if (/(cable|usb|type\s*-?\s*c|lightning|micro\s*-?\s*usb)/.test(s)) return "cables";
   if (/(backpack|bag|sleeve|pouch|case)/.test(s)) return "bags";
   if (/(earbud|headphone|headset|speaker|audio)/.test(s)) return "audio";
-  return "others";
+
+  // fallback: auto-slug any new category
+  const fallback = slugify(raw);
+  return fallback || "others";
 }
 
-/** Infer category from explicit field or from name/slug, then normalize */
 function inferCategory(p: Product): string {
   const explicit = String(((p as any).category || (p as any).type || "")).trim();
   if (explicit) return normalizeCategoryName(explicit);
@@ -98,7 +115,7 @@ export default async function HomePage() {
     (categories[cat] ??= []).push(p);
   }
 
-  // Pretty names
+  // Pretty names for known cats
   const label: Record<string, string> = {
     "power-banks": "Power Banks",
     chargers: "Chargers & Adapters",
@@ -136,7 +153,6 @@ export default async function HomePage() {
             See all →
           </Link>
         </div>
-        {/* 🔥 Updated grid: 2 cols on mobile, 3 on lg, 4 on xl */}
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((p) => (
             <ProductCard key={(p as any).id} product={p} />
@@ -163,7 +179,7 @@ export default async function HomePage() {
         />
       </section>
 
-      {/* Featured (Most Visited) */}
+      {/* Featured */}
       <Section title="Featured" items={featured} href="/products" />
 
       {/* On Sale */}
@@ -180,7 +196,7 @@ export default async function HomePage() {
         return (
           <Section
             key={cat}
-            title={label[cat] ?? cat}
+            title={label[cat] ?? prettyLabel(cat)}
             items={items.slice(0, 8)}
             href={`/products?cat=${encodeURIComponent(cat)}`}
           />
