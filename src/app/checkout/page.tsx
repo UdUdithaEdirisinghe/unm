@@ -3,18 +3,20 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useCart } from "../../components/cart/CartProvider";
+import { useRouter } from "next/navigation";
 import { formatCurrency } from "../../lib/format";
+
+const SHIPPING_FEE = 350;
 
 type Pay = "COD" | "BANK";
 type PromoResult = { code: string; freeShipping: boolean; discount: number };
 type Shortage = { id: string; name: string; requested: number; available: number };
 
-const SHIPPING_FEE = 350;
-
 export default function CheckoutPage() {
   const { items, clear, subtotal } = useCart();
+  const router = useRouter();
 
-  // Billing form
+  // Billing
   const [bill, setBill] = useState({
     firstName: "",
     lastName: "",
@@ -27,7 +29,7 @@ export default function CheckoutPage() {
     payment: "COD" as Pay,
   });
 
-  // Optional different shipping
+  // Optional shipping (different address)
   const [shipDifferent, setShipDifferent] = useState(false);
   const [ship, setShip] = useState({
     firstName: "",
@@ -38,20 +40,27 @@ export default function CheckoutPage() {
     postal: "",
   });
 
-  // Promo & validation
-  const [codeInput, setCodeInput] = useState("");
-  const [applied, setApplied] = useState<PromoResult | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [agree, setAgree] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [shortages, setShortages] = useState<Shortage[] | null>(null);
-
   // Bank slip
   const [slipFile, setSlipFile] = useState<File | null>(null);
 
+  // Terms
+  const [agree, setAgree] = useState(false);
+
+  // Promo
+  const [codeInput, setCodeInput] = useState("");
+  const [applied, setApplied] = useState<PromoResult | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  // Errors/loading
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  // shortages from server
+  const [shortages, setShortages] = useState<Shortage[] | null>(null);
+
+  // Totals
   const discount = applied?.discount ?? 0;
-  const shipping = applied?.freeShipping ? 0 : (items.length ? SHIPPING_FEE : 0);
+  const shipping = applied?.freeShipping ? 0 : SHIPPING_FEE;
   const total = Math.max(0, subtotal - discount) + shipping;
 
   function updBill<K extends keyof typeof bill>(k: K) {
@@ -74,7 +83,7 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: trimmed, subtotal }),
       });
-      const data = await r.json().catch(() => ({}));
+      const data = await r.json();
       if (!r.ok || !data?.valid) {
         setApplied(null);
         setErr(data?.message || "That code isn’t valid or has expired.");
@@ -99,7 +108,7 @@ export default function CheckoutPage() {
     const fd = new FormData();
     fd.append("file", slipFile);
     const r = await fetch("/api/upload", { method: "POST", body: fd });
-    const data = await r.json().catch(() => ({}));
+    const data = await r.json();
     if (!r.ok) throw new Error(data?.error || "Slip upload failed");
     return data.path as string;
   }
@@ -123,7 +132,7 @@ export default function CheckoutPage() {
     if (items.length === 0) return setErr("Your cart is empty.");
     if (!agree) return setErr("Please agree to the Terms & Conditions.");
 
-    // Validate optional shipping block
+    // different shipping address
     let shippingAddress: typeof ship | undefined;
     if (shipDifferent) {
       if (
@@ -134,7 +143,7 @@ export default function CheckoutPage() {
         !rePhone10.test(ship.phone)
       ) {
         return setErr(
-          "For shipping to a different address, enter recipient name, address, town/city and a valid 10-digit phone."
+          "For shipping to a different address, please enter recipient name, address, town/city and a valid 10-digit phone."
         );
       }
       shippingAddress = ship;
@@ -156,6 +165,7 @@ export default function CheckoutPage() {
           paymentMethod: bill.payment,
           promoCode: applied?.code,
           bankSlipUrl,
+          // server recomputes totals, we send context
           shipping,
           customer: bill,
           shipDifferent,
@@ -163,6 +173,7 @@ export default function CheckoutPage() {
         }),
       });
 
+      // stock shortages gracefully (HTTP 409)
       if (r.status === 409) {
         const data = await r.json().catch(() => ({}));
         const arr = Array.isArray(data?.shortages) ? data.shortages : [];
@@ -176,23 +187,24 @@ export default function CheckoutPage() {
 
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data?.ok) {
-        setErr(typeof data?.error === "string" ? data.error : "Order failed.");
+        setErr(
+          typeof data?.error === "string" ? data.error : "Order failed."
+        );
         return;
       }
 
+      // success
       clear();
-      window.location.href = `/thank-you?order=${encodeURIComponent(
-        data.orderId
-      )}`;
-    } catch (ex: any) {
-      setErr(ex?.message ?? "Order failed.");
+      router.push(`/thank-you?order=${data.orderId}`);
+    } catch (e: any) {
+      setErr(e?.message ?? "Order failed.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8">
+    <div className="site-container">
       <h1 className="mb-6 text-2xl font-bold">Checkout</h1>
 
       {err && (
@@ -214,7 +226,8 @@ export default function CheckoutPage() {
             ))}
           </ul>
           <p className="mt-2 text-xs text-amber-200/90">
-            Reduce quantities or remove the items above to continue.
+            Please reduce the quantity of the items above or remove them to
+            continue.
           </p>
         </div>
       )}
@@ -227,10 +240,9 @@ export default function CheckoutPage() {
             <input className="field" placeholder="Last name" value={bill.lastName} onChange={updBill("lastName")} required />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <input className="field" type="email" placeholder="Email" value={bill.email} onChange={updBill("email")} required />
-            <input className="field" type="tel" placeholder="Phone" value={bill.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updBill("phone")} required />
-          </div>
+          <input className="field" type="email" placeholder="Email" value={bill.email} onChange={updBill("email")} required />
+
+          <input className="field" type="tel" placeholder="Phone" value={bill.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updBill("phone")} required />
 
           <input className="field" placeholder="Street address" value={bill.address} onChange={updBill("address")} required />
 
@@ -240,27 +252,46 @@ export default function CheckoutPage() {
           </div>
 
           <textarea className="textarea" placeholder="Order notes (optional)" value={bill.notes} onChange={updBill("notes")} />
+
+          {/* Ship to different address */}
+          <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 space-y-3">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={shipDifferent} onChange={(e) => setShipDifferent(e.target.checked)} />
+              <span className="text-slate-200">Ship to a different address</span>
+            </label>
+
+            {shipDifferent && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <input className="field" placeholder="Recipient first name" value={ship.firstName} onChange={updShip("firstName")} required />
+                  <input className="field" placeholder="Recipient last name" value={ship.lastName} onChange={updShip("lastName")} required />
+                </div>
+                <input className="field" type="tel" placeholder="Recipient phone" value={ship.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updShip("phone")} required />
+                <input className="field" placeholder="Street address" value={ship.address} onChange={updShip("address")} required />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <input className="field" placeholder="Town / City" value={ship.city} onChange={updShip("city")} required />
+                  <input className="field" placeholder="Postcode / ZIP (optional)" value={ship.postal} onChange={updShip("postal")} />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Summary & payment */}
-        <div className="space-y-4">
-          <div className="panel p-4 space-y-3">
-            <h2 className="text-lg font-semibold">Your order</h2>
+        {/* Summary / Payment */}
+        <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 space-y-4">
+          <h2 className="text-lg font-semibold">Your order</h2>
 
-            <div className="space-y-2 text-sm text-slate-300">
-              {items.map((it) => (
-                <div key={it.id} className="flex items-center justify-between">
-                  <div className="truncate">
-                    {it.name} × {it.quantity}
-                  </div>
-                  <div className="shrink-0">
-                    {formatCurrency(it.price * it.quantity)}
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="space-y-2 text-sm text-slate-300">
+            {items.map((it) => (
+              <div key={it.id} className="flex items-center justify-between">
+                <div className="truncate">{it.name} × {it.quantity}</div>
+                <div className="shrink-0">{formatCurrency(it.price * it.quantity)}</div>
+              </div>
+            ))}
+          </div>
 
-            {/* Promo */}
+          {/* Promo input */}
+          <div className="mt-2">
             {applied ? (
               <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
                 <span>Code <b>{applied.code}</b> applied</span>
@@ -268,68 +299,38 @@ export default function CheckoutPage() {
               </div>
             ) : (
               <div className="flex gap-2">
-                <input
-                  className="field w-full"
-                  placeholder="Promotion code"
-                  value={codeInput}
-                  onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
-                />
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={applyCode}
-                  disabled={checking}
-                  aria-label="Apply promotion code"
-                >
+                <input className="field w-full" placeholder="Promotion code" value={codeInput} onChange={(e) => setCodeInput(e.target.value.toUpperCase())} />
+                <button type="button" className="btn-secondary" onClick={applyCode} disabled={checking} aria-label="Apply promotion code">
                   {checking ? "Checking…" : "Apply"}
                 </button>
               </div>
             )}
+          </div>
 
-            {/* Totals */}
-            <div className="mt-2 border-t border-slate-700/60 pt-2 text-sm space-y-1">
-              <div className="flex justify-between">
-                <span>Subtotal</span>
-                <span>{formatCurrency(subtotal)}</span>
+          {/* Totals */}
+          <div className="mt-2 border-t border-slate-700/60 pt-2 text-sm space-y-1">
+            <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
+            {discount > 0 && (
+              <div className="flex justify-between text-emerald-300">
+                <span>Promo discount</span><span>-{formatCurrency(discount)}</span>
               </div>
-              {discount > 0 && (
-                <div className="flex justify-between text-emerald-300">
-                  <span>Promo discount</span>
-                  <span>-{formatCurrency(discount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span>Shipping</span>
-                <span>{applied?.freeShipping ? "Free" : formatCurrency(shipping)}</span>
-              </div>
-              <div className="flex justify-between font-semibold">
-                <span>Total</span>
-                <span>{formatCurrency(total)}</span>
-              </div>
+            )}
+            <div className="flex justify-between">
+              <span>Shipping</span>
+              <span>{applied?.freeShipping ? "Free" : formatCurrency(shipping)}</span>
             </div>
+            <div className="flex justify-between font-semibold"><span>Total</span><span>{formatCurrency(total)}</span></div>
           </div>
 
           {/* Payment */}
-          <div className="panel p-4 space-y-3">
+          <div className="space-y-3 pt-2">
             <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="pay"
-                value="COD"
-                checked={bill.payment === "COD"}
-                onChange={() => setBill((f) => ({ ...f, payment: "COD" }))}
-              />
+              <input type="radio" name="pay" value="COD" checked={bill.payment === "COD"} onChange={() => setBill((f) => ({ ...f, payment: "COD" }))} />
               <span>Cash on delivery</span>
             </label>
 
             <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="pay"
-                value="BANK"
-                checked={bill.payment === "BANK"}
-                onChange={() => setBill((f) => ({ ...f, payment: "BANK" }))}
-              />
+              <input type="radio" name="pay" value="BANK" checked={bill.payment === "BANK"} onChange={() => setBill((f) => ({ ...f, payment: "BANK" }))} />
               <span>Direct bank transfer</span>
             </label>
 
@@ -343,58 +344,22 @@ export default function CheckoutPage() {
                 </div>
                 <div>
                   <label className="block text-sm mb-1">Upload bank slip</label>
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)}
-                    required
-                  />
+                  <input type="file" accept="image/*,application/pdf" onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)} required />
                 </div>
               </div>
             )}
-
-            {/* Different shipping */}
-            <div className="pt-2 space-y-3">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={shipDifferent}
-                  onChange={(e) => setShipDifferent(e.target.checked)}
-                />
-                <span className="text-slate-200">Ship to a different address</span>
-              </label>
-
-              {shipDifferent && (
-                <div className="space-y-3 rounded-lg border border-slate-700/60 p-3">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <input className="field" placeholder="Recipient first name" value={ship.firstName} onChange={updShip("firstName")} required />
-                    <input className="field" placeholder="Recipient last name" value={ship.lastName} onChange={updShip("lastName")} required />
-                  </div>
-                  <input className="field" type="tel" placeholder="Recipient phone" value={ship.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updShip("phone")} required />
-                  <input className="field" placeholder="Street address" value={ship.address} onChange={updShip("address")} required />
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <input className="field" placeholder="Town / City" value={ship.city} onChange={updShip("city")} required />
-                    <input className="field" placeholder="Postcode / ZIP (optional)" value={ship.postal} onChange={updShip("postal")} />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Terms + Place order */}
-            <label className="mt-1 flex items-center gap-2">
-              <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-              <span className="text-slate-200">
-                I agree to the{" "}
-                <Link href="/policies" className="underline">
-                  Terms &amp; Conditions
-                </Link>.
-              </span>
-            </label>
-
-            <button className="btn-primary w-full mt-2" disabled={busy}>
-              {busy ? "Placing…" : "Place Order"}
-            </button>
           </div>
+
+          <label className="mt-2 flex items-center gap-2">
+            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+            <span className="text-slate-200">
+              I agree to the <Link href="/policies" className="underline">Terms & Conditions</Link>.
+            </span>
+          </label>
+
+          <button className="btn-primary w-full mt-2" disabled={busy}>
+            {busy ? "Placing…" : "Place Order"}
+          </button>
         </div>
       </form>
     </div>
