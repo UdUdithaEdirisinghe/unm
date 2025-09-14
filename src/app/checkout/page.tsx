@@ -12,11 +12,11 @@ type Pay = "COD" | "BANK";
 type PromoResult = { code: string; freeShipping: boolean; discount: number };
 type Shortage = { id: string; name: string; requested: number; available: number };
 
-/** Two-column layout like your screenshots; dark palette; no feature loss. */
 export default function CheckoutPage() {
   const { items, clear, subtotal } = useCart();
   const router = useRouter();
 
+  // Billing
   const [bill, setBill] = useState({
     firstName: "",
     lastName: "",
@@ -29,6 +29,7 @@ export default function CheckoutPage() {
     payment: "COD" as Pay,
   });
 
+  // Optional shipping (different address)
   const [shipDifferent, setShipDifferent] = useState(false);
   const [ship, setShip] = useState({
     firstName: "",
@@ -39,15 +40,25 @@ export default function CheckoutPage() {
     postal: "",
   });
 
+  // Bank slip
   const [slipFile, setSlipFile] = useState<File | null>(null);
+
+  // Terms
   const [agree, setAgree] = useState(false);
+
+  // Promo
   const [codeInput, setCodeInput] = useState("");
   const [applied, setApplied] = useState<PromoResult | null>(null);
   const [checking, setChecking] = useState(false);
+
+  // Errors/loading
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // NEW: shortages from server
   const [shortages, setShortages] = useState<Shortage[] | null>(null);
 
+  // Totals
   const discount = applied?.discount ?? 0;
   const shipping = applied?.freeShipping ? 0 : SHIPPING_FEE;
   const total = Math.max(0, subtotal - discount) + shipping;
@@ -121,6 +132,7 @@ export default function CheckoutPage() {
     if (items.length === 0) return setErr("Your cart is empty.");
     if (!agree) return setErr("Please agree to the Terms & Conditions.");
 
+    // Shipping different → name, address, phone are mandatory
     let shippingAddress: typeof ship | undefined;
     if (shipDifferent) {
       if (
@@ -131,7 +143,7 @@ export default function CheckoutPage() {
         !rePhone10.test(ship.phone)
       ) {
         return setErr(
-          "For shipping to a different address, enter recipient name, address, town/city and a valid 10-digit phone."
+          "For shipping to a different address, please enter recipient name, address, town/city and a valid 10-digit phone."
         );
       }
       shippingAddress = ship;
@@ -153,13 +165,16 @@ export default function CheckoutPage() {
           paymentMethod: bill.payment,
           promoCode: applied?.code,
           bankSlipUrl,
+          // totals context for server; server recomputes/validates anyway
           shipping,
+          // customer + shipping
           customer: bill,
           shipDifferent,
           shippingAddress,
         }),
       });
 
+      // Handle stock shortages gracefully (HTTP 409 from server)
       if (r.status === 409) {
         const data = await r.json().catch(() => ({}));
         const arr = Array.isArray(data?.shortages) ? data.shortages : [];
@@ -173,10 +188,13 @@ export default function CheckoutPage() {
 
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data?.ok) {
-        setErr(typeof data?.error === "string" ? data.error : "Order failed.");
+        setErr(
+          typeof data?.error === "string" ? data.error : "Order failed."
+        );
         return;
       }
 
+      // success
       clear();
       router.push(`/thank-you?order=${data.orderId}`);
     } catch (e: any) {
@@ -187,15 +205,17 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 py-8">
+    <div className="mx-auto w-full max-w-5xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold">Checkout</h1>
 
+      {/* General error */}
       {err && (
         <div className="mb-4 rounded-lg border border-rose-700/40 bg-rose-900/20 px-4 py-2 text-rose-200">
           {err}
         </div>
       )}
 
+      {/* NEW: shortages panel */}
       {shortages && shortages.length > 0 && (
         <div className="mb-4 rounded-lg border border-amber-700/40 bg-amber-900/20 px-4 py-3 text-amber-100">
           <div className="font-semibold mb-1">Item availability</div>
@@ -209,47 +229,143 @@ export default function CheckoutPage() {
             ))}
           </ul>
           <p className="mt-2 text-xs text-amber-200/90">
-            Please reduce quantities or remove unavailable items to continue.
+            Please reduce the quantity of the items above or remove them to
+            continue.
           </p>
         </div>
       )}
 
-      <form onSubmit={place} className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-        {/* Billing form */}
-        <div className="lg:col-span-7 space-y-4">
+      <form onSubmit={place} className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {/* Billing details */}
+        <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <input className="field" placeholder="First name" value={bill.firstName} onChange={updBill("firstName")} required />
-            <input className="field" placeholder="Last name" value={bill.lastName} onChange={updBill("lastName")} required />
+            <input
+              className="field"
+              placeholder="First name"
+              value={bill.firstName}
+              onChange={updBill("firstName")}
+              required
+            />
+            <input
+              className="field"
+              placeholder="Last name"
+              value={bill.lastName}
+              onChange={updBill("lastName")}
+              required
+            />
           </div>
+
+          <input
+            className="field"
+            type="email"
+            placeholder="Email"
+            value={bill.email}
+            onChange={updBill("email")}
+            required
+          />
+
+          <input
+            className="field"
+            type="tel"
+            placeholder="Phone"
+            value={bill.phone}
+            pattern="[0-9]{10}"
+            title="Enter a valid 10-digit phone number"
+            onChange={updBill("phone")}
+            required
+          />
+
+          <input
+            className="field"
+            placeholder="Street address"
+            value={bill.address}
+            onChange={updBill("address")}
+            required
+          />
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <input className="field" type="email" placeholder="Email" value={bill.email} onChange={updBill("email")} required />
-            <input className="field" type="tel" placeholder="Phone" value={bill.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updBill("phone")} required />
+            <input
+              className="field"
+              placeholder="Town / City"
+              value={bill.city}
+              onChange={updBill("city")}
+              required
+            />
+            <input
+              className="field"
+              placeholder="Postcode / ZIP (optional)"
+              value={bill.postal}
+              onChange={updBill("postal")}
+            />
           </div>
-          <input className="field" placeholder="Street address" value={bill.address} onChange={updBill("address")} required />
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <input className="field" placeholder="Town / City" value={bill.city} onChange={updBill("city")} required />
-            <input className="field" placeholder="Postcode / ZIP (optional)" value={bill.postal} onChange={updBill("postal")} />
-          </div>
-          <textarea className="textarea" placeholder="Order notes (optional)" value={bill.notes} onChange={updBill("notes")} />
+
+          <textarea
+            className="textarea"
+            placeholder="Order notes (optional)"
+            value={bill.notes}
+            onChange={updBill("notes")}
+          />
 
           {/* Ship to different address */}
-          <div className="card p-4 space-y-3">
+          <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 space-y-3">
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={shipDifferent} onChange={(e) => setShipDifferent(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={shipDifferent}
+                onChange={(e) => setShipDifferent(e.target.checked)}
+              />
               <span className="text-slate-200">Ship to a different address</span>
             </label>
 
             {shipDifferent && (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <input className="field" placeholder="Recipient first name" value={ship.firstName} onChange={updShip("firstName")} required />
-                  <input className="field" placeholder="Recipient last name" value={ship.lastName} onChange={updShip("lastName")} required />
+                  <input
+                    className="field"
+                    placeholder="Recipient first name"
+                    value={ship.firstName}
+                    onChange={updShip("firstName")}
+                    required
+                  />
+                  <input
+                    className="field"
+                    placeholder="Recipient last name"
+                    value={ship.lastName}
+                    onChange={updShip("lastName")}
+                    required
+                  />
                 </div>
-                <input className="field" type="tel" placeholder="Recipient phone" value={ship.phone} pattern="[0-9]{10}" title="Enter a valid 10-digit phone number" onChange={updShip("phone")} required />
-                <input className="field" placeholder="Street address" value={ship.address} onChange={updShip("address")} required />
+                <input
+                  className="field"
+                  type="tel"
+                  placeholder="Recipient phone"
+                  value={ship.phone}
+                  pattern="[0-9]{10}"
+                  title="Enter a valid 10-digit phone number"
+                  onChange={updShip("phone")}
+                  required
+                />
+                <input
+                  className="field"
+                  placeholder="Street address"
+                  value={ship.address}
+                  onChange={updShip("address")}
+                  required
+                />
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <input className="field" placeholder="Town / City" value={ship.city} onChange={updShip("city")} required />
-                  <input className="field" placeholder="Postcode / ZIP (optional)" value={ship.postal} onChange={updShip("postal")} />
+                  <input
+                    className="field"
+                    placeholder="Town / City"
+                    value={ship.city}
+                    onChange={updShip("city")}
+                    required
+                  />
+                  <input
+                    className="field"
+                    placeholder="Postcode / ZIP (optional)"
+                    value={ship.postal}
+                    onChange={updShip("postal")}
+                  />
                 </div>
               </div>
             )}
@@ -257,68 +373,80 @@ export default function CheckoutPage() {
         </div>
 
         {/* Summary / Payment */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="card p-4">
-            <h2 className="text-lg font-semibold mb-3">Your order</h2>
-            <div className="space-y-2 text-sm text-slate-300">
-              {items.map((it) => (
-                <div key={it.id} className="flex items-center justify-between">
-                  <div className="truncate">{it.name} × {it.quantity}</div>
-                  <div className="shrink-0">{formatCurrency(it.price * it.quantity)}</div>
-                </div>
-              ))}
-            </div>
+        <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4 space-y-4">
+          <h2 className="text-lg font-semibold">Your order</h2>
 
-            {/* Promo */}
-            <div className="mt-3">
-              {applied ? (
-                <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
-                  <span>Code <b>{applied.code}</b> applied</span>
-                  <button type="button" onClick={removeCode} className="btn-ghost">Remove</button>
+          <div className="space-y-2 text-sm text-slate-300">
+            {items.map((it) => (
+              <div key={it.id} className="flex items-center justify-between">
+                <div className="truncate">
+                  {it.name} × {it.quantity}
                 </div>
-              ) : (
-                <div className="flex gap-2">
-                  <input
-                    className="field w-full"
-                    placeholder="Promotion code"
-                    value={codeInput}
-                    onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
-                  />
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={applyCode}
-                    disabled={checking}
-                    aria-label="Apply promotion code"
-                  >
-                    {checking ? "Checking…" : "Apply"}
-                  </button>
+                <div className="shrink-0">
+                  {formatCurrency(it.price * it.quantity)}
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
+          </div>
 
-            {/* Totals */}
-            <div className="mt-3 border-t border-slate-700/60 pt-3 text-sm space-y-1">
-              <div className="flex justify-between">
-                <span>Subtotal</span><span>{formatCurrency(subtotal)}</span>
+          {/* Promo input */}
+          <div className="mt-2">
+            {applied ? (
+              <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
+                <span>
+                  Code <b>{applied.code}</b> applied
+                </span>
+                <button type="button" onClick={removeCode} className="btn-ghost">
+                  Remove
+                </button>
               </div>
-              {discount > 0 && (
-                <div className="flex justify-between text-emerald-300">
-                  <span>Promo discount</span><span>-{formatCurrency(discount)}</span>
-                </div>
-              )}
-              <div className="flex justify-between">
-                <span>Shipping</span>
-                <span>{applied?.freeShipping ? "Free" : formatCurrency(shipping)}</span>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  className="field w-full"
+                  placeholder="Promotion code"
+                  value={codeInput}
+                  onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
+                />
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={applyCode}
+                  disabled={checking}
+                  aria-label="Apply promotion code"
+                >
+                  {checking ? "Checking…" : "Apply"}
+                </button>
               </div>
-              <div className="flex justify-between font-semibold">
-                <span>Total</span><span>{formatCurrency(total)}</span>
+            )}
+          </div>
+
+          {/* Totals */}
+          <div className="mt-2 border-t border-slate-700/60 pt-2 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>{formatCurrency(subtotal)}</span>
+            </div>
+            {discount > 0 && (
+              <div className="flex justify-between text-emerald-300">
+                <span>Promo discount</span>
+                <span>-{formatCurrency(discount)}</span>
               </div>
+            )}
+            <div className="flex justify-between">
+              <span>Shipping</span>
+              <span>
+                {applied?.freeShipping ? "Free" : formatCurrency(shipping)}
+              </span>
+            </div>
+            <div className="flex justify-between font-semibold">
+              <span>Total</span>
+              <span>{formatCurrency(total)}</span>
             </div>
           </div>
 
           {/* Payment */}
-          <div className="card p-4 space-y-3">
+          <div className="space-y-3 pt-2">
             <label className="flex items-center gap-2">
               <input
                 type="radio"
@@ -342,12 +470,21 @@ export default function CheckoutPage() {
             </label>
 
             {bill.payment === "BANK" && (
-              <div className="space-y-3 rounded-lg border border-slate-700/60 p-3 bg-slate-900/30">
+              <div className="space-y-3 rounded-lg border border-slate-700/60 p-3">
+                {/* Demo bank details */}
                 <div className="text-sm">
-                  <div><b>Bank:</b> Sampath Bank PLC</div>
-                  <div><b>Branch:</b> Colombo Fort</div>
-                  <div><b>Account No:</b> 001234567890</div>
-                  <div><b>Contact:</b> 0771234567</div>
+                  <div>
+                    <b>Bank:</b> Sampath Bank PLC
+                  </div>
+                  <div>
+                    <b>Branch:</b> Colombo Fort
+                  </div>
+                  <div>
+                    <b>Account No:</b> 001234567890
+                  </div>
+                  <div>
+                    <b>Contact:</b> 0771234567
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm mb-1">Upload bank slip</label>
@@ -360,19 +497,27 @@ export default function CheckoutPage() {
                 </div>
               </div>
             )}
-
-            <label className="mt-2 flex items-center gap-2">
-              <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-              <span className="text-slate-200">
-                I agree to the{" "}
-                <Link href="/policies" className="underline">Terms & Conditions</Link>.
-              </span>
-            </label>
-
-            <button className="btn-primary w-full" disabled={busy}>
-              {busy ? "Placing…" : "Place Order"}
-            </button>
           </div>
+
+          {/* Terms & Conditions – use Link to avoid hard reload */}
+          <label className="mt-2 flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={agree}
+              onChange={(e) => setAgree(e.target.checked)}
+            />
+            <span className="text-slate-200">
+              I agree to the{" "}
+              <Link href="/policies" className="underline">
+                Terms & Conditions
+              </Link>
+              .
+            </span>
+          </label>
+
+          <button className="btn-primary w-full mt-2" disabled={busy}>
+            {busy ? "Placing…" : "Place Order"}
+          </button>
         </div>
       </form>
     </div>

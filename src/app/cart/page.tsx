@@ -4,12 +4,6 @@ import Link from "next/link";
 import { useCart } from "../../components/cart/CartProvider";
 import { formatCurrency } from "../../lib/format";
 
-/**
- * Matches the layout in your screenshots:
- * - Clean stacked rows on mobile
- * - Table-like columns on desktop
- * - Dark palette, no bright white boxes
- */
 export default function CartPage() {
   const { items, setQty, remove, clear, subtotal } = useCart();
 
@@ -30,48 +24,40 @@ export default function CartPage() {
     <div className="mx-auto w-full max-w-5xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold">Cart</h1>
 
-      {/* header (desktop) */}
-      <div className="hidden md:grid grid-cols-12 px-4 py-2 text-xs text-slate-400">
-        <div className="col-span-6">Product</div>
-        <div className="col-span-2 text-right">Price</div>
-        <div className="col-span-2 text-center">Quantity</div>
-        <div className="col-span-2 text-right">Subtotal</div>
-      </div>
-
-      {/* items */}
+      {/* Items */}
       <div className="space-y-3">
         {items.map((it) => (
-          <div key={it.id} className="card p-4">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-12 md:items-center">
-              {/* title */}
-              <div className="md:col-span-6">
-                <div className="font-medium text-white">{it.name}</div>
-                <div className="text-xs text-slate-400">{it.slug}</div>
+          <div
+            key={it.id}
+            className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4"
+          >
+            <div className="grid grid-cols-1 items-center gap-4 sm:grid-cols-12">
+              <div className="sm:col-span-6">
+                <div className="font-medium truncate">{it.name}</div>
+                <div className="text-sm text-slate-400 truncate">{it.slug}</div>
               </div>
 
-              {/* price */}
-              <div className="md:col-span-2 md:text-right text-slate-200">
+              <div className="sm:col-span-2 text-sm text-slate-300">
                 {formatCurrency(it.price)}
               </div>
 
-              {/* qty */}
-              <div className="md:col-span-2 md:text-center">
-                <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-900/40">
+              <div className="sm:col-span-3">
+                <div className="inline-flex items-center gap-2 rounded-md border border-slate-700 bg-slate-900/40 px-2 py-1">
                   <button
                     type="button"
                     aria-label="Decrease quantity"
-                    className="h-9 w-9 text-white"
+                    className="h-8 w-8 rounded-md bg-slate-800 text-white"
                     onClick={() => setQty(it.id, Math.max(1, it.quantity - 1))}
                   >
                     −
                   </button>
-                  <span className="min-w-10 text-center text-slate-100 tabular-nums">
+                  <span className="min-w-6 text-center text-slate-100 tabular-nums">
                     {it.quantity}
                   </span>
                   <button
                     type="button"
                     aria-label="Increase quantity"
-                    className="h-9 w-9 text-white"
+                    className="h-8 w-8 rounded-md bg-slate-800 text-white"
                     onClick={() => setQty(it.id, it.quantity + 1)}
                   >
                     +
@@ -79,8 +65,7 @@ export default function CartPage() {
                 </div>
               </div>
 
-              {/* row subtotal */}
-              <div className="md:col-span-2 md:text-right font-semibold text-white">
+              <div className="sm:col-span-1 text-right font-medium">
                 {formatCurrency(it.price * it.quantity)}
               </div>
             </div>
@@ -97,9 +82,9 @@ export default function CartPage() {
         ))}
       </div>
 
-      {/* totals & actions */}
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <div className="card p-4">
+      {/* Totals */}
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] p-4">
           <div className="flex items-center justify-between">
             <span className="text-slate-300">Subtotal</span>
             <span className="font-semibold">{formatCurrency(subtotal)}</span>
@@ -124,4 +109,4 @@ export default function CartPage() {
       </div>
     </div>
   );
-}
+} 
