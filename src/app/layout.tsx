@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import Navbar from "../components/Navbar";
-import Footer from "../components/Footer";
+import Footer from "../components/Footer"; // <- match casing
 import { CartProvider } from "../components/cart/CartProvider";
 import FloatingWhatsApp from "../components/FloatingWhatsApp";
 import ToastProvider from "../components/ui/ToastProvider";
@@ -8,41 +8,27 @@ import "./globals.css";
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
-      <body className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+    <html lang="en" className="h-full">
+      <body className="min-h-screen flex flex-col">
         <CartProvider>
-          {/* Page shell */}
-          <div className="flex min-h-screen flex-col">
-            {/* Top nav */}
-            <Navbar />
+          <Navbar />
+          {/* Global toasts (top-center, just under the navbar) */}
+          <ToastProvider />
 
-            {/* Global toasts (under nav) */}
-            <ToastProvider />
+          {/* Main area */}
+          <main className="site-container flex-1">{children}</main>
 
-            {/* Main content area */}
-            <main className="flex-1">
-              <div className="site-container">{children}</div>
-            </main>
+          <Footer />
 
-            {/* Footer */}
-            <Footer />
-          </div>
-
-          {/* WhatsApp bubble (same routes you had) */}
+          {/* WhatsApp bubble on selected routes */}
           <FloatingWhatsApp
             phone="+94760703523"
             label="Need Help? Chat with us"
             routes={[
               "/",
-              "/products",
-              "/products/",
-              "/products/*",
-              "/about",
-              "/contact",
-              "/policies",
-              "/faq",
-              "/facts",
-              "/cart",
+              "/products", "/products/", "/products/*",
+              "/about", "/contact", "/policies",
+              "/faq", "/facts", "/cart",
             ]}
           />
         </CartProvider>

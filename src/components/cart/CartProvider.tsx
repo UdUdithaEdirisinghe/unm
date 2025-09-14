@@ -26,13 +26,12 @@ type CartState = {
 };
 
 const CartContext = createContext<CartState | undefined>(undefined);
-
 const STORAGE_KEY = "cart:v1";
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
 
-  /* hydrate once */
+  // hydrate
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -40,7 +39,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, []);
 
-  /* persist on every change */
+  // persist
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(items));

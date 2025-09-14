@@ -1,8 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  content: [
-    "./src//*.{js,ts,jsx,tsx}",   // ✅ catch all nested files
-  ],
+  // ✅ catch EVERYTHING under src to avoid purge/visibility bugs
+  content: ["./src//*.{js,ts,jsx,tsx,mdx}"],
   theme: {
     extend: {
       colors: {
@@ -21,18 +20,12 @@ module.exports = {
       },
     },
   },
+  // Optional: keep common classes even if Tailwind can’t find them (dynamic usage)
   safelist: [
-    "btn-primary",
-    "btn-secondary",
-    "btn-ghost",
-    "field",
-    "textarea",
-    "select",
-    "card",
-    "panel",
-    "line-clamp-1",
-    "line-clamp-2",
-    "line-clamp-3",
+    "btn-primary","btn-secondary","btn-ghost",
+    "field","textarea","select","input",
+    "panel","card","site-container",
+    "line-clamp-1","line-clamp-2","line-clamp-3",
   ],
   plugins: [],
 };
