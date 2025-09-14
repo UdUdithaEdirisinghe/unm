@@ -4,36 +4,35 @@
 
 /* ---------- Base (keep your palette) ---------- */
 :root {
-  --bg: #0b1221;            /* deep blue background */
+  --bg: #0b1221;
   --panel: rgba(10,15,28,0.6);
   --panel-strong: rgba(10,15,28,0.9);
   --text: #e6e9f2;
   --muted: #a0a8c0;
 
-  --brand: #6574ff;         /* primary accent */
+  --brand: #6574ff;
   --brand-600: #545fff;
   --brand-700: #4551ff;
 
   --border: #1f2a44;
 }
 
-html, body, #__next {
-  height: 100%;
-}
+html, body, #__next { height: 100%; }
 
 body {
   @apply antialiased;
-  background: radial-gradient(1000px 600px at 10% -10%, rgba(101,116,255,0.12), transparent 60%),
-              radial-gradient(800px 600px at 90% -20%, rgba(255,255,255,0.05), transparent 60%),
-              var(--bg);
+  background:
+    radial-gradient(1000px 600px at 10% -10%, rgba(101,116,255,0.12), transparent 60%),
+    radial-gradient(800px 600px at 90% -20%, rgba(255,255,255,0.05), transparent 60%),
+    var(--bg);
   color: var(--text);
 }
 
-/* ---------- Typography tweaks ---------- */
+/* Typography */
 h1, h2, h3, h4 { @apply text-white; }
 .text-brand-text { color: var(--text); }
 
-/* ---------- Panels ---------- */
+/* Panels / cards */
 .panel {
   background: var(--panel);
   backdrop-filter: blur(8px);
@@ -45,7 +44,7 @@ h1, h2, h3, h4 { @apply text-white; }
 @layer components {
   .btn-base {
     @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium
-           transition outline-none focus:ring-2 focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed;
+    transition outline-none focus:ring-2 focus:ring-offset-0 disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-primary {
     @apply btn-base text-white;
@@ -54,17 +53,13 @@ h1, h2, h3, h4 { @apply text-white; }
   }
   .btn-primary:hover { background: linear-gradient(180deg, var(--brand-600), var(--brand-700)); }
 
-  .btn-secondary {
-    @apply btn-base text-slate-100 border border-slate-700 bg-slate-900/40;
-  }
+  .btn-secondary { @apply btn-base text-slate-100 border border-slate-700 bg-slate-900/40; }
   .btn-secondary:hover { @apply bg-slate-900/60; }
 
-  .btn-ghost {
-    @apply btn-base border border-transparent text-slate-300 bg-transparent;
-  }
+  .btn-ghost { @apply btn-base border border-transparent text-slate-300 bg-transparent; }
   .btn-ghost:hover { @apply bg-white/5; }
 
-  /* ---------- Rectangular Inputs ---------- */
+  /* ---------- Rectangular Inputs (DARK) ---------- */
   .field {
     @apply block w-full rounded-md border border-slate-700 bg-slate-900/40
            px-4 py-3 text-slate-200 placeholder-slate-400 shadow-inner
@@ -72,41 +67,28 @@ h1, h2, h3, h4 { @apply text-white; }
   }
   .textarea { @apply field min-h-[110px] resize-y; }
   .select   { @apply field pr-10 appearance-none; }
-
-  /* Legacy alias (if any old components use .input) */
-  .input { @apply field; }
+  .input    { @apply field; } /* legacy alias */
 }
 
-/* ---------- Cards / Surfaces ---------- */
+/* Cards if needed */
 .card {
   @apply rounded-2xl bg-white/90 shadow backdrop-blur border border-slate-200;
 }
 
-/* ---------- Utilities you referenced ---------- */
+/* Utilities */
 .aspect-4-3 { aspect-ratio: 4 / 3; }
 
-/* Scrollbar (subtle, optional) */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: #475569 transparent;
-}
-*::-webkit-scrollbar { height: 8px; width: 8px; }
-*::-webkit-scrollbar-thumb { background: #475569; border-radius: 999px; }
-*::-webkit-scrollbar-track { background: transparent; }
-
-/* ---------- Layout helpers for Cart/Checkout ---------- */
-.form-card    { @apply panel p-5 md:p-6 space-y-4; }
-.summary-card { @apply panel p-5 md:p-6 space-y-4; }
-.row          { @apply flex items-center justify-between; }
-.label        { @apply text-slate-300; }
-.value        { @apply font-semibold text-white; }
-.section-title{ @apply text-lg font-semibold text-white; }
-
-/* ---------- Multi-line clamp WITHOUT plugin ---------- */
-/* Use: className="two-line" to clamp at 2 lines */
-.two-line {
+/* Multi-line truncation WITHOUT the plugin */
+.name-2, .name-3 {
   display: -webkit-box;
-  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+.name-2 { -webkit-line-clamp: 2; }
+.name-3 { -webkit-line-clamp: 3; }
+
+/* Scrollbar (subtle) */
+* { scrollbar-width: thin; scrollbar-color: #475569 transparent; }
+*::-webkit-scrollbar { height: 8px; width: 8px; }
+*::-webkit-scrollbar-thumb { background: #475569; border-radius: 999px; }
+*::-webkit-scrollbar-track { background: transparent; }
