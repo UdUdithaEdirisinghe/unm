@@ -1,3 +1,4 @@
+// src/app/faq/FaqClient.tsx
 "use client";
 
 import { useState } from "react";
@@ -19,7 +20,7 @@ const faqs: QA[] = [
   },
   {
     q: "How long will delivery take?",
-    a: "Colombo/Greater Colombo: 1–3 working days. Other districts: 2–5 working days. Pre-orders ship on or after the indicated date.",
+    a: "Colombo/Greater Colombo: 1–3 working days. Other districts: 2–5 working days. Pre-orders ship on/after the indicated date.",
   },
   {
     q: "What payment methods do you accept?",
@@ -55,56 +56,57 @@ function Item({
   onToggle: (i: number) => void;
 }) {
   return (
-    <div className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.6)]">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={`faq-panel-${index}`}
-        onClick={() => onToggle(index)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-4 text-left"
-      >
-        <span className="font-medium text-slate-100 text-lg">{qa.q}</span>
-        {/* Chevron */}
-        <svg
-          className={`h-5 w-5 shrink-0 text-slate-300 transition-transform ${
-            open ? "rotate-180" : "rotate-0"
-          }`}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          aria-hidden="true"
-        >
-          <path d="M6 9l6 6 6-6" />
-        </svg>
-      </button>
+    <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)] px-4 py-4">
+      {/* header row: text on left (not clickable), arrow-only button on right */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="font-medium text-slate-100">{qa.q}</span>
 
-      {/* Smooth expand / collapse */}
+        {/* CSS chevron (no SVG ⇒ can't blow up) */}
+        <button
+          type="button"
+          aria-label={open ? "Hide answer" : "Show answer"}
+          aria-expanded={open}
+          aria-controls={`faq-panel-${index}`}
+          onClick={() => onToggle(index)}
+          className="inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-slate-800/40 focus:outline-none focus:ring-2 focus:ring-brand-accent/40"
+        >
+          <span
+            className={`inline-block h-3 w-3 border-b-2 border-r-2 border-slate-300 transition-transform duration-300 ${
+              open ? "rotate-45 -translate-y-px" : "-rotate-135 translate-y-px"
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* answer: hidden by default; smooth open/close; robust against purge */}
       <div
         id={`faq-panel-${index}`}
-        className={`px-4 text-slate-300 overflow-hidden transition-all duration-300 ${
-          open ? "max-h-40 pb-4" : "max-h-0"
-        }`}
+        className="overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out"
+        style={{ maxHeight: open ? 500 : 0, opacity: open ? 1 : 0 }}
       >
-        <p className="pt-2">{qa.a}</p>
+        <p className="pt-3 text-sm text-slate-300 leading-relaxed">{qa.a}</p>
       </div>
     </div>
   );
 }
 
 export default function FaqClient() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0);
+  // multiple items can be open at once
+  const [openSet, setOpenSet] = useState<Set<number>>(() => new Set());
+
+  const toggle = (idx: number) => {
+    setOpenSet((cur) => {
+      const next = new Set(cur);
+      next.has(idx) ? next.delete(idx) : next.add(idx);
+      return next;
+    });
+  };
 
   return (
-    <div className="space-y-4">
+    // extra separation so it never looks like a table
+    <div className="space-y-6">
       {faqs.map((qa, i) => (
-        <Item
-          key={qa.q}
-          qa={qa}
-          index={i}
-          open={openIndex === i}
-          onToggle={(idx) => setOpenIndex((cur) => (cur === idx ? null : idx))}
-        />
+        <Item key={qa.q} qa={qa} index={i} open={openSet.has(i)} onToggle={toggle} />
       ))}
     </div>
   );
