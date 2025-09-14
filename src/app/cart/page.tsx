@@ -30,12 +30,14 @@ export default function CartPage() {
             <div key={it.id} className="form-card">
               <div className="grid gap-4 sm:grid-cols-12 sm:items-center">
                 <div className="sm:col-span-6">
-                  <div className="font-medium text-white leading-snug">{it.name}</div>
+                  <div className="font-medium text-white leading-snug two-line">{it.name}</div>
                   <div className="text-xs text-slate-400 truncate">{it.slug}</div>
                 </div>
+
                 <div className="sm:col-span-2 text-sm text-slate-300">
                   {formatCurrency(it.price)}
                 </div>
+
                 <div className="sm:col-span-3">
                   <div className="inline-flex items-center gap-2 rounded-md border border-slate-700 bg-slate-900/40 px-2 py-1">
                     <button
@@ -59,13 +61,17 @@ export default function CartPage() {
                     </button>
                   </div>
                 </div>
+
                 <div className="sm:col-span-1 text-right font-semibold text-white">
                   {formatCurrency(it.price * it.quantity)}
                 </div>
               </div>
 
               <div className="flex items-center justify-between">
-                <button className="btn-ghost text-rose-400 hover:text-rose-300" onClick={() => remove(it.id)}>
+                <button
+                  className="btn-ghost text-rose-400 hover:text-rose-300"
+                  onClick={() => remove(it.id)}
+                >
                   Remove
                 </button>
               </div>

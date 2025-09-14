@@ -16,28 +16,49 @@ export default function CheckoutPage() {
   const { items, clear, subtotal } = useCart();
   const router = useRouter();
 
+  // Billing
   const [bill, setBill] = useState({
-    firstName: "", lastName: "", email: "", phone: "",
-    address: "", city: "", postal: "", notes: "",
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    address: "",
+    city: "",
+    postal: "",
+    notes: "",
     payment: "COD" as Pay,
   });
 
+  // Optional shipping (different address)
   const [shipDifferent, setShipDifferent] = useState(false);
   const [ship, setShip] = useState({
-    firstName: "", lastName: "", phone: "", address: "", city: "", postal: "",
+    firstName: "",
+    lastName: "",
+    phone: "",
+    address: "",
+    city: "",
+    postal: "",
   });
 
+  // Bank slip
   const [slipFile, setSlipFile] = useState<File | null>(null);
+
+  // Terms
   const [agree, setAgree] = useState(false);
 
+  // Promo
   const [codeInput, setCodeInput] = useState("");
   const [applied, setApplied] = useState<PromoResult | null>(null);
   const [checking, setChecking] = useState(false);
 
+  // Errors/loading
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // NEW: shortages from server
   const [shortages, setShortages] = useState<Shortage[] | null>(null);
 
+  // Totals
   const discount = applied?.discount ?? 0;
   const shipping = applied?.freeShipping ? 0 : SHIPPING_FEE;
   const total = Math.max(0, subtotal - discount) + shipping;
@@ -77,7 +98,6 @@ export default function CheckoutPage() {
       setChecking(false);
     }
   }
-
   function removeCode() {
     setApplied(null);
     setCodeInput("");
@@ -112,6 +132,7 @@ export default function CheckoutPage() {
     if (items.length === 0) return setErr("Your cart is empty.");
     if (!agree) return setErr("Please agree to the Terms & Conditions.");
 
+    // Shipping different → name, address, phone are mandatory
     let shippingAddress: typeof ship | undefined;
     if (shipDifferent) {
       if (
@@ -144,13 +165,16 @@ export default function CheckoutPage() {
           paymentMethod: bill.payment,
           promoCode: applied?.code,
           bankSlipUrl,
+          // totals context for server; server recomputes/validates anyway
           shipping,
+          // customer + shipping
           customer: bill,
           shipDifferent,
           shippingAddress,
         }),
       });
 
+      // Handle stock shortages gracefully (HTTP 409 from server)
       if (r.status === 409) {
         const data = await r.json().catch(() => ({}));
         const arr = Array.isArray(data?.shortages) ? data.shortages : [];
@@ -164,10 +188,13 @@ export default function CheckoutPage() {
 
       const data = await r.json().catch(() => ({}));
       if (!r.ok || !data?.ok) {
-        setErr(typeof data?.error === "string" ? data.error : "Order failed.");
+        setErr(
+          typeof data?.error === "string" ? data.error : "Order failed."
+        );
         return;
       }
 
+      // success
       clear();
       router.push(`/thank-you?order=${data.orderId}`);
     } catch (e: any) {
@@ -199,10 +226,13 @@ export default function CheckoutPage() {
               </li>
             ))}
           </ul>
+          <p className="mt-2 text-xs text-amber-200/90">
+            Please reduce the quantity of the items above or remove them to continue.
+          </p>
         </div>
       )}
 
-      {/* grid layout: form (8) + summary (4) */}
+      {/* grid: form (8) + summary (4) */}
       <form onSubmit={place} className="grid gap-6 md:grid-cols-12">
         {/* left column */}
         <div className="md:col-span-8 space-y-6">
@@ -223,7 +253,11 @@ export default function CheckoutPage() {
 
           <div className="form-card">
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={shipDifferent} onChange={(e) => setShipDifferent(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={shipDifferent}
+                onChange={(e) => setShipDifferent(e.target.checked)}
+              />
               <span className="text-slate-200">Ship to a different address</span>
             </label>
 
@@ -244,7 +278,7 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* right column: summary */}
+        {/* right column */}
         <aside className="md:col-span-4 space-y-6">
           <div className="summary-card">
             <h2 className="section-title">Your order</h2>
@@ -258,12 +292,16 @@ export default function CheckoutPage() {
               ))}
             </div>
 
-            {/* promo */}
+            {/* Promo input */}
             <div className="mt-2">
               {applied ? (
                 <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
-                  <span>Code <b>{applied.code}</b> applied</span>
-                  <button type="button" onClick={removeCode} className="btn-ghost">Remove</button>
+                  <span>
+                    Code <b>{applied.code}</b> applied
+                  </span>
+                  <button type="button" onClick={removeCode} className="btn-ghost">
+                    Remove
+                  </button>
                 </div>
               ) : (
                 <div className="flex gap-2">
@@ -286,24 +324,40 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* totals */}
+            {/* Totals */}
             <div className="mt-2 border-t border-slate-700/60 pt-2 text-sm space-y-1">
               <div className="row"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
               {discount > 0 && (
-                <div className="row text-emerald-300"><span>Promo discount</span><span>-{formatCurrency(discount)}</span></div>
+                <div className="row text-emerald-300">
+                  <span>Promo discount</span>
+                  <span>-{formatCurrency(discount)}</span>
+                </div>
               )}
               <div className="row"><span>Shipping</span><span>{applied?.freeShipping ? "Free" : formatCurrency(shipping)}</span></div>
               <div className="row font-semibold text-white"><span>Total</span><span>{formatCurrency(total)}</span></div>
             </div>
 
-            {/* payment */}
+            {/* Payment */}
             <div className="space-y-3 pt-2">
               <label className="flex items-center gap-2">
-                <input type="radio" name="pay" value="COD" checked={bill.payment === "COD"} onChange={() => setBill((f) => ({ ...f, payment: "COD" }))} />
+                <input
+                  type="radio"
+                  name="pay"
+                  value="COD"
+                  checked={bill.payment === "COD"}
+                  onChange={() => setBill((f) => ({ ...f, payment: "COD" }))}
+                />
                 <span>Cash on delivery</span>
               </label>
+
               <label className="flex items-center gap-2">
-                <input type="radio" name="pay" value="BANK" checked={bill.payment === "BANK"} onChange={() => setBill((f) => ({ ...f, payment: "BANK" }))} />
+                <input
+                  type="radio"
+                  name="pay"
+                  value="BANK"
+                  checked={bill.payment === "BANK"}
+                  onChange={() => setBill((f) => ({ ...f, payment: "BANK" }))}
+                />
                 <span>Direct bank transfer</span>
               </label>
 
@@ -328,10 +382,19 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {/* terms + place order */}
+            {/* Terms */}
             <label className="mt-2 flex items-center gap-2">
-              <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-              <span className="text-slate-200">I agree to the <Link href="/policies" className="underline">Terms & Conditions</Link>.</span>
+              <input
+                type="checkbox"
+                checked={agree}
+                onChange={(e) => setAgree(e.target.checked)}
+              />
+              <span className="text-slate-200">
+                I agree to the{" "}
+                <Link href="/policies" className="underline">
+                  Terms & Conditions
+                </Link>.
+              </span>
             </label>
 
             <button className="btn-primary w-full mt-2" disabled={busy}>
