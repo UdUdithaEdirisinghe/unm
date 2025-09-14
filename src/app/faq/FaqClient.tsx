@@ -63,7 +63,7 @@ function Item({
         onClick={() => onToggle(index)}
         className="w-full flex items-center justify-between gap-3 px-4 py-4 text-left"
       >
-        <span className="font-medium text-slate-100">{qa.q}</span>
+        <span className="font-medium text-slate-100 text-lg">{qa.q}</span>
         {/* Chevron */}
         <svg
           className={`h-5 w-5 shrink-0 text-slate-300 transition-transform ${
@@ -79,16 +79,14 @@ function Item({
         </svg>
       </button>
 
-      {/* Answer */}
+      {/* Smooth expand / collapse */}
       <div
         id={`faq-panel-${index}`}
-        className={`px-4 pb-4 text-slate-300 transition-[grid-template-rows] ${
-          open ? "grid grid-rows-[1fr]" : "grid grid-rows-[0fr]"
+        className={`px-4 text-slate-300 overflow-hidden transition-all duration-300 ${
+          open ? "max-h-40 pb-4" : "max-h-0"
         }`}
       >
-        <div className="overflow-hidden">
-          <p className="pt-2">{qa.a}</p>
-        </div>
+        <p className="pt-2">{qa.a}</p>
       </div>
     </div>
   );
