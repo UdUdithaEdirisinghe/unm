@@ -43,17 +43,15 @@ const faqs: QA[] = [
   },
 ];
 
+/** Fixed-size chevron so global SVG styles can’t blow it up */
 function Chevron({ open }: { open: boolean }) {
-  // Fixed size so global SVG rules can’t blow it up
   return (
     <svg
       aria-hidden="true"
       width="18"
       height="18"
       viewBox="0 0 24 24"
-      className={`text-slate-300 transition-transform duration-200 ${
-        open ? "rotate-180" : ""
-      }`}
+      className={`text-slate-300 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
       fill="none"
       stroke="currentColor"
       strokeWidth="2"
@@ -77,8 +75,8 @@ function Item({
   onToggle: (i: number) => void;
 }) {
   return (
-    <div className="rounded-xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)]">
-      {/* Header row: text on left (read-only), arrow button on right (toggles) */}
+    <div className="rounded-2xl border border-slate-800/60 bg-[rgba(10,15,28,0.6)]">
+      {/* Header row: text left (not clickable), arrow button right (toggles) */}
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <span className="font-medium text-slate-100">{qa.q}</span>
 
@@ -88,27 +86,31 @@ function Item({
           aria-expanded={open}
           aria-controls={`faq-panel-${index}`}
           onClick={() => onToggle(index)}
-          className="inline-flex items-center justify-center rounded-md border border-slate-700/60 p-1.5 hover:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-brand-accent/40"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-700/60 hover:bg-slate-800/50 focus:outline-none focus:ring-2 focus:ring-brand-accent/40"
         >
           <Chevron open={open} />
         </button>
       </div>
 
-      {/* Panel: smooth max-height animation, hidden by default */}
+      {/* Panel: smooth, clean; hidden by default. 
+         Using max-height animation to avoid Tailwind purge issues. */}
       <div
         id={`faq-panel-${index}`}
-        className="px-4 pb-3 text-slate-300 overflow-hidden transition-[max-height] duration-300 ease-in-out"
-        style={{ maxHeight: open ? 400 : 0 }} // <= slide open/closed; adjust height if needed
+        className="px-4 pb-3 text-slate-300 overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out"
+        style={{
+          maxHeight: open ? 500 : 0, // plenty for typical answers; bump if you write very long ones
+          opacity: open ? 1 : 0.0,
+        }}
       >
-        <p className="pt-1">{qa.a}</p>
+        <p className="pt-1 text-sm leading-relaxed">{qa.a}</p>
       </div>
     </div>
   );
 }
 
 export default function FaqClient() {
-  // Start with all closed; arrow controls each one
-  const [openSet, setOpenSet] = useState<Set<number>>(new Set());
+  // Multiple open at once (each arrow controls its own panel)
+  const [openSet, setOpenSet] = useState<Set<number>>(() => new Set([0]));
 
   const toggle = (idx: number) => {
     setOpenSet((cur) => {
