@@ -9,30 +9,34 @@ import "./globals.css";
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
         <CartProvider>
-          <Navbar />
+          {/* Page shell */}
+          <div className="flex min-h-screen flex-col">
+            {/* Top nav */}
+            <Navbar />
 
-          {/* 🔔 Global toasts (top-center, just under the navbar) */}
-          <ToastProvider />
+            {/* Global toasts (under nav) */}
+            <ToastProvider />
 
-          <main className="mx-auto w-full max-w-6xl px-4 py-6">
-            {children}
-          </main>
+            {/* Main content area */}
+            <main className="flex-1">
+              <div className="site-container">{children}</div>
+            </main>
 
-          <Footer />
+            {/* Footer */}
+            <Footer />
+          </div>
 
-          {/* WhatsApp bubble: only on selected routes.
-             - Mobile: round button only
-             - Desktop: button + label */}
+          {/* WhatsApp bubble (same routes you had) */}
           <FloatingWhatsApp
             phone="+94760703523"
             label="Need Help? Chat with us"
             routes={[
-              "/",            // Home (exact)
-              "/products",    // List
-              "/products/",   // Ensure nested detail pages work
-              "/products/*",  // Product detail (globs in our check)
+              "/",
+              "/products",
+              "/products/",
+              "/products/*",
               "/about",
               "/contact",
               "/policies",
