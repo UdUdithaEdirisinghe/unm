@@ -1,4 +1,3 @@
-// src/app/checkout/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -163,7 +162,7 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           items,
           paymentMethod: bill.payment,
-          promoCode: applied?.code,  // works for promo or store credit
+          promoCode: applied?.code, // one box for promo or store-credit
           bankSlipUrl,
           shipping,
           customer: bill,
