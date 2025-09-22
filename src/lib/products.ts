@@ -60,6 +60,9 @@ export type Order = {
   promoDiscount?: number | null;
   freeShipping: boolean;
   total: number;
+
+  /** NEW: whether promoCode was a normal promo or a store credit (nullable if none) */
+  promoKind?: "promo" | "store_credit" | null;
 };
 
 /* ========= Helpers ========= */

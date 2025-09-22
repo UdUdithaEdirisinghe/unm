@@ -1,4 +1,3 @@
-// src/app/api/orders/[id]/route.ts
 import { NextResponse } from "next/server";
 import sql from "../../../../lib/db";
 import type { Order } from "../../../../lib/products";
@@ -8,7 +7,7 @@ export const revalidate = 0;
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
-function rowToOrder(r: any): Order {
+function baseRowToOrder(r: any): Omit<Order, "promoKind"> {
   return {
     id: String(r.id),
     createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
@@ -38,7 +37,19 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   try {
     const rows: any[] = await sql`SELECT * FROM orders WHERE id=${params.id} LIMIT 1`;
     if (!rows[0]) return j({ error: "Not found" }, 404);
-    return j(rowToOrder(rows[0]));
+
+    const base = baseRowToOrder(rows[0]);
+
+    // Infer promoKind: if promo_code exists in store_credits -> store_credit, else promo (or null)
+    let promoKind: Order["promoKind"] = null;
+    if (base.promoCode) {
+      const scRows: any[] = await sql`
+        SELECT 1 FROM store_credits WHERE code = ${base.promoCode} LIMIT 1
+      `;
+      promoKind = scRows[0] ? "store_credit" : "promo";
+    }
+
+    return j({ ...base, promoKind } as Order);
   } catch (e: any) {
     return j({ error: e?.message || "Failed to read order" }, 500);
   }
@@ -56,7 +67,15 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       UPDATE orders SET status=${status} WHERE id=${params.id} RETURNING *
     `;
     if (!rows[0]) return j({ error: "Not found" }, 404);
-    return j(rowToOrder(rows[0]));
+
+    // Return updated order with promoKind
+    const base = baseRowToOrder(rows[0]);
+    let promoKind: Order["promoKind"] = null;
+    if (base.promoCode) {
+      const scRows: any[] = await sql`SELECT 1 FROM store_credits WHERE code=${base.promoCode} LIMIT 1`;
+      promoKind = scRows[0] ? "store_credit" : "promo";
+    }
+    return j({ ...base, promoKind } as Order);
   } catch (e: any) {
     return j({ error: e?.message || "Failed to update order" }, 500);
   }

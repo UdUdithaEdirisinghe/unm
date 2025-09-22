@@ -1,4 +1,3 @@
-// src/app/api/orders/route.ts
 import { NextResponse } from "next/server";
 import sql, { toJson } from "../../../lib/db";
 import { getPromoByCode, isPromoActive, computeDiscount } from "../../../lib/promos";
@@ -52,14 +51,14 @@ function rowToOrder(r: any): Order {
   };
 }
 
-// recognizable order id: MNY-YYYYMMDD-XXXX
+// recognizable order id: MNY-YYYYMMDD-#### (numeric suffix)
 function generateOrderId() {
   const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = `${d.getMonth() + 1}`.padStart(2, "0");
-  const dd = `${d.getDate()}`.padStart(2, "0");
-  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
-  return `MNY-${yyyy}${mm}${dd}-${rand}`;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const suffix = Math.floor(Math.random() * 10000).toString().padStart(4, "0"); // 0000–9999
+  return `MNY-${y}${m}${day}-${suffix}`;
 }
 
 /* ---------- GET (admin list) ---------- */
@@ -123,6 +122,7 @@ export async function POST(req: Request) {
     let promo_discount = 0;
     let free_shipping = false;
     let usedStoreCredit = false; // mark later if order insert succeeds
+    let promoKind: Order["promoKind"] = null;
 
     if (codeRaw) {
       // try PROMO
@@ -133,6 +133,7 @@ export async function POST(req: Request) {
         promo_code = promo!.code;
         promo_discount = num(discount, 0);
         free_shipping = !!freeShipping;
+        promoKind = "promo";
       } else {
         // try STORE CREDIT
         const rows: any[] = await sql`
@@ -158,6 +159,7 @@ export async function POST(req: Request) {
             promo_discount = Math.min(amount, subtotal);
             free_shipping = false;
             usedStoreCredit = true;
+            promoKind = "store_credit";
           }
         }
       }
@@ -234,7 +236,7 @@ export async function POST(req: Request) {
     if (usedStoreCredit && promo_code) {
       await sql`
         UPDATE store_credits
-        SET used_order_id = ${order_id}
+        SET used_order_id = ${order_id}, used_at = now()
         WHERE code = ${promo_code} AND used_order_id IS NULL
       `;
     }
@@ -250,6 +252,7 @@ export async function POST(req: Request) {
         promoDiscount: row.promo_discount == null ? null : num(row.promo_discount),
         freeShipping: !!row.free_shipping,
         total: num(row.total),
+        promoKind, // NEW
       },
       201
     );

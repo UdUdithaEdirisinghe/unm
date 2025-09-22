@@ -1,3 +1,4 @@
+// src/app/thank-you/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -52,6 +53,8 @@ type Order = {
   paymentMethod: "COD" | "BANK";
   bankSlipName?: string;
   bankSlipUrl?: string;
+  // NEW:
+  promoKind?: "promo" | "store_credit" | null;
 };
 
 /* ================= Utils ================= */
@@ -94,7 +97,7 @@ function ThankYouInner() {
       try {
         const r = await fetch(`/api/orders/${orderId}`, { cache: "no-store" });
         if (!r.ok) throw new Error(await r.text());
-        const data = (await r.json()) as Order; // API already normalizes in /api/orders/[id]
+        const data = (await r.json()) as Order; // API normalizes
         if (alive) setOrder(data);
       } catch (e: any) {
         if (alive) setErr(e?.message ?? "Failed to load order.");
@@ -206,7 +209,11 @@ function ThankYouInner() {
                 {order.promoCode && (
                   <>
                     <br />
-                    Promo ({order.promoCode}): −{totals?.promoDiscount}
+                    {order.promoKind === "store_credit" ? (
+                      <>Store credit ({order.promoCode}): −{totals?.promoDiscount}</>
+                    ) : (
+                      <>Promo ({order.promoCode}): −{totals?.promoDiscount}</>
+                    )}
                   </>
                 )}
                 <br />
