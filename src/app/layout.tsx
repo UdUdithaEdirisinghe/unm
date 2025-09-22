@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer"; // <- match casing
 import { CartProvider } from "../components/cart/CartProvider";
-import FloatingWhatsApp from "../components/FloatingWhatsApp";
+import FloatingWhatsApp from "../components/FloatingWhatsapp";
 import ToastProvider from "../components/ui/ToastProvider";
 import "./globals.css";
 
