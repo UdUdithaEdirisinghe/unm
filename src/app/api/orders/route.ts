@@ -12,6 +12,8 @@ const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 type CartLine = { id: string; name: string; slug?: string; price: number; quantity: number };
 const n = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
+/* ---------- Helpers ---------- */
+
 function parseItems(raw: any): CartLine[] {
   if (Array.isArray(raw)) {
     return raw.map((i) => ({
@@ -52,6 +54,17 @@ function rowToOrder(r: any): Order {
     bankSlipName: r.bank_slip_name ?? null,
     bankSlipUrl: r.bank_slip_url ?? null,
   };
+}
+
+/** Readable order IDs like MNY-20250915-00042 */
+async function generateOrderId(prefix = "MNY") {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const rows: any[] = await sql`SELECT nextval('order_seq') AS seq`;
+  const seq = String(rows[0].seq).padStart(5, "0");
+  return `${prefix}-${y}${m}${day}-${seq}`;
 }
 
 /* ---------- GET: list orders (Admin) ---------- */
@@ -125,7 +138,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const baseShipping = n(body.shipping, 350);
+    const baseShipping = n(body.shipping, 400); // <- your current fee
     const shipping = free_shipping ? 0 : baseShipping;
     const total = Math.max(0, subtotal - promo_discount) + shipping;
 
@@ -159,13 +172,10 @@ export async function POST(req: Request) {
     const bank_slip_name = body.bankSlipName ?? null;
     const bank_slip_url = body.bankSlipUrl ?? null;
 
-    const order_id = `ord_${Date.now()}`;
+    // NEW: readable order id
+    const order_id = await generateOrderId("MNY");
 
-    // 5) Perform the write(s) in a single transaction:
-    //    - insert order
-    //    - decrement stock
-    // Neon serverless does not support explicit BEGIN/COMMIT on pooled connections,
-    // but running statements sequentially is atomic enough for this use here.
+    // 5) Insert order + decrement stock
     const createdRows: any[] = await sql`
       INSERT INTO orders (
         id, created_at, status,
@@ -193,7 +203,6 @@ export async function POST(req: Request) {
       RETURNING *
     `;
 
-    // decrement stocks
     for (const it of items) {
       await sql`UPDATE products SET stock = stock - ${it.quantity} WHERE id = ${it.id}`;
     }
