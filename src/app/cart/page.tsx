@@ -7,7 +7,7 @@ import { formatCurrency } from "../../lib/format";
 export default function CartPage() {
   const { items, setQty, remove, clear, subtotal } = useCart();
 
-  const SHIPPING_FEE = 350;
+  const SHIPPING_FEE = 400;
   const total = subtotal + (items.length ? SHIPPING_FEE : 0);
 
   if (items.length === 0) {
