@@ -3,7 +3,7 @@ export default function ContactPage() {
     <section className="prose prose-invert max-w-3xl">
       <h1>Get in touch</h1>
       <p>Email: support@manny.lk</p>
-      <p>Phone: +94-XX-XXX-XXXX</p>
+      <p>Phone: +94-XX-XXX-XXX9</p>
     </section>
   );
 }
