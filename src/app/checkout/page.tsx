@@ -46,7 +46,7 @@ export default function CheckoutPage() {
   // Terms
   const [agree, setAgree] = useState(false);
 
-  // Promo (works for promo & store-credit)
+  // Promo / Store credit (unified)
   const [codeInput, setCodeInput] = useState("");
   const [applied, setApplied] = useState<PromoResult | null>(null);
   const [checking, setChecking] = useState(false);
@@ -72,77 +72,33 @@ export default function CheckoutPage() {
       setShip((s) => ({ ...s, [k]: e.target.value }));
   }
 
-  /** Normalize various validate responses into a single shape.
-   * Accepts: {valid:true} or {ok:true} or {success:true}
-   * May include data under promo or credit.
-   * Uses server-provided discount if present; otherwise safely derives.
-   */
-  function normalizeValidation(data: any, fallbackCode: string): PromoResult | null {
-    const isValid = data && (data.valid === true || data.ok === true || data.success === true);
-    if (!isValid) return null;
-
-    const entity = data.promo || data.credit || {};
-    const code = data.code || entity.code || fallbackCode;
-
-    // Prefer server-calculated discount
-    let discount = Number.isFinite(data?.discount) ? Number(data.discount) : 0;
-
-    // Some backends return {amount: number} for store credit
-    if (!discount && Number.isFinite(data?.amount)) discount = Number(data.amount);
-
-    // As a last resort (only if server omitted), derive conservative discount
-    if (!discount && entity) {
-      const t = String(entity.type || entity.kind || "").toLowerCase();
-      const val = Number(entity.value);
-      if (Number.isFinite(val) && val > 0) {
-        if (t === "percent") discount = Math.floor((subtotal * val) / 100);
-        if (t === "fixed") discount = val;
-      }
-    }
-
-    // free shipping flag can be top-level or implied by type
-    const freeShipping =
-      !!data.freeShipping ||
-      String(entity.type || entity.kind || "").toLowerCase() === "freeshipping";
-
-    // Never let client compute a negative/insane number
-    if (!Number.isFinite(discount) || discount < 0) discount = 0;
-    if (discount > subtotal) discount = subtotal;
-
-    return { code, discount, freeShipping };
-  }
-
-  // ✅ FIX: try promos first, then store credits; tolerate different payload shapes
+  /** Apply code against the unified validator: /api/promos/validate */
   async function applyCode() {
     const trimmed = codeInput.trim().toUpperCase();
     if (!trimmed) return;
     setChecking(true);
     setErr(null);
-
-    async function tryEndpoint(url: string): Promise<PromoResult | null> {
-      const r = await fetch(url, {
+    try {
+      const r = await fetch("/api/promos/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: trimmed, subtotal }),
       });
-      const data = await r.json().catch(() => ({}));
-      // if endpoint returns a 2xx but says invalid, normalizeValidation will return null
-      if (!r.ok) return null;
-      return normalizeValidation(data, trimmed);
-    }
+      const data = await r.json().catch(() => ({} as any));
 
-    try {
-      let result = await tryEndpoint("/api/promos/validate");
-      if (!result) result = await tryEndpoint("/api/store-credits/validate");
-
-      if (!result) {
+      if (!r.ok || !data?.valid) {
         setApplied(null);
-        setErr("That code isn’t valid or has expired.");
+        setErr(typeof data?.message === "string" ? data.message : "That code isn’t valid or has expired.");
       } else {
-        setApplied(result);
+        setApplied({
+          code: data?.promo?.code || trimmed,
+          freeShipping: !!data?.freeShipping,
+          discount: Number(data?.discount || 0),
+        });
       }
     } catch (e: any) {
-      setErr(e?.message ?? "Failed to validate code.");
+      setApplied(null);
+      setErr(e?.message ?? "Could not validate the code right now.");
     } finally {
       setChecking(false);
     }
@@ -158,8 +114,8 @@ export default function CheckoutPage() {
     const fd = new FormData();
     fd.append("file", slipFile);
     const r = await fetch("/api/upload", { method: "POST", body: fd });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data?.error || "Slip upload failed");
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok || !data?.path) throw new Error(data?.error || "Slip upload failed");
     return data.path as string;
   }
 
@@ -212,7 +168,7 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           items,
           paymentMethod: bill.payment,
-          promoCode: applied?.code, // promo or store-credit
+          promoCode: applied?.code, // one field for promo or store-credit
           bankSlipUrl,
           shipping,
           customer: bill,
@@ -336,7 +292,7 @@ export default function CheckoutPage() {
               ))}
             </div>
 
-            {/* One input for promo or store credit */}
+            {/* One input for promo OR store credit — unified */}
             <div className="mt-2">
               {applied ? (
                 <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
