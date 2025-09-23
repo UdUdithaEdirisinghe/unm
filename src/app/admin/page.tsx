@@ -356,7 +356,7 @@ export default function AdminPage() {
 
   // ✅ FIXED confirm() usage here
   async function deletePromo(code: string) {
-    if (`!confirm(Delete promo ${code}?)`) return;
+    if (!confirm(`Delete promo ${code}?`)) return;
     try {
       const r = await fetch(`/api/promos/${code}`, { method: "DELETE" });
       if (!r.ok) throw new Error(await r.text());
@@ -419,7 +419,7 @@ export default function AdminPage() {
 
   // ✅ FIXED confirm() usage here
   async function deleteCredit(code: string) {
-    if (`!confirm(Delete store credit ${code}?)`) return;
+    if (!confirm(`Delete store credit ${code}?`)) return;
     try {
       const r = await fetch(`/api/store-credits/${code}`, { method: "DELETE" });
       if (!r.ok) throw new Error(await r.text());

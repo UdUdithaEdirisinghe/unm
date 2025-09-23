@@ -1,24 +1,36 @@
 // src/app/api/store-credits/validate/route.ts
 import { NextResponse } from "next/server";
-import { canApplyStoreCredit, getStoreCreditByCode, isStoreCreditActive } from "../../../../lib/storeCredits";
+import { getStoreCreditByCode, evaluateStoreCredit } from "../../../../lib/storeCredits";
 
-const j = (d:any, s=200) => NextResponse.json(d, { status:s });
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+type ReqBody = { code?: string; subtotal?: number };
 
 export async function POST(req: Request) {
   try {
-    const { code, subtotal } = await req.json();
-    const c = String(code || "").trim().toUpperCase();
-    const sub = Number(subtotal) || 0;
-    if (!c) return j({ valid:false, error:"Missing code." }, 400);
+    const body = (await req.json()) as ReqBody;
+    const code = String(body.code || "").trim().toUpperCase();
+    const subtotal = Number(body.subtotal ?? 0);
 
-    const sc = await getStoreCreditByCode(c);
-    if (!sc || !isStoreCreditActive(sc)) return j({ valid:false, error:"Invalid or inactive store credit." }, 400);
+    if (!code) {
+      return NextResponse.json({ error: "Missing code" }, { status: 400 });
+    }
 
-    const ok = canApplyStoreCredit(sc, sub);
-    if (!ok.ok) return j({ valid:false, error: ok.reason }, 400);
+    const credit = await getStoreCreditByCode(code);
+    if (!credit) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
 
-    return j({ valid:true, amount: sc.amount, minOrderTotal: sc.minOrderTotal ?? null, storeCredit: sc });
-  } catch (e:any) {
-    return j({ valid:false, error: e?.message || "Validation failed." }, 500);
+    const result = evaluateStoreCredit(credit, subtotal);
+
+    return NextResponse.json({
+      valid: result.valid,
+      reason: result.reason,
+      discount: result.discount,
+      credit,
+    });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message ?? "Validation failed" }, { status: 500 });
   }
 }
