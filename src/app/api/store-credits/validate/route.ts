@@ -7,9 +7,10 @@ export const revalidate = 0;
 const j = (data: any, status = 200) => NextResponse.json(data, { status });
 
 /**
- * POST { code:string, subtotal:number }
- * -> { valid:true, discount:number, promo:{code}, kind:'store_credit' }
- * or { valid:false, message }
+ * Validate STORE CREDIT only
+ * Request:  POST { code:string, subtotal:number }
+ * Response: { valid:true, discount:number, freeShipping:false, kind:'store_credit', promo:{code} }
+ * or       { valid:false, message }
  */
 export async function POST(req: Request) {
   try {
@@ -38,17 +39,14 @@ export async function POST(req: Request) {
     const sc = rows[0];
     const enabled = !!sc.enabled;
     const startsOk = !sc.starts_at || new Date(sc.starts_at) <= now;
-    const endsOk = !sc.ends_at || new Date(sc.ends_at) >= now;
-    const notUsed = !sc.used_at;
-    const minOk =
-      sc.min_order_total == null || Number(subtotal) >= Number(sc.min_order_total);
+    const endsOk   = !sc.ends_at   || new Date(sc.ends_at)   >= now;
+    const notUsed  = !sc.used_at;
+    const minOk    = sc.min_order_total == null || subtotal >= Number(sc.min_order_total);
 
     if (!enabled) return j({ valid: false, message: "Disabled code." }, 400);
-    if (!startsOk || !endsOk)
-      return j({ valid: false, message: "Code not active." }, 400);
+    if (!startsOk || !endsOk) return j({ valid: false, message: "Code not active." }, 400);
     if (!notUsed) return j({ valid: false, message: "Code already used." }, 400);
-    if (!minOk)
-      return j({ valid: false, message: "Order total doesn’t meet the minimum." }, 400);
+    if (!minOk)   return j({ valid: false, message: "Order total doesn’t meet the minimum." }, 400);
 
     const amt = Math.max(0, Number(sc.amount) || 0);
     const discount = Math.min(subtotal, amt);
