@@ -1,14 +1,23 @@
+// src/app/api/orders/route.ts
 // Create order / List orders (admin)
 import { NextResponse } from "next/server";
 import sql, { toJson } from "../../../lib/db";
 import { getPromoByCode, isPromoActive, computePromoDiscount } from "../../../lib/promos";
 import type { Order } from "../../../lib/products";
+import { sendOrderEmails } from "../../../lib/mail"; // 👈 added
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
-type CartLine = { id: string; name: string; slug?: string; price: number; quantity: number };
+
+type CartLine = {
+  id: string;
+  name: string;
+  slug?: string;
+  price: number;
+  quantity: number;
+};
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
@@ -243,6 +252,26 @@ export async function POST(req: Request) {
     }
 
     const row = created[0];
+
+    // 6) Send emails (fire-and-forget; never blocks order)
+    // Provide plain/ISO strings where expected by mail.ts
+    sendOrderEmails({
+      id: String(row.id),
+      createdAt: row.created_at
+        ? new Date(row.created_at).toISOString()
+        : new Date().toISOString(),
+      customer: row.customer,
+      items: row.items,
+      subtotal: num(row.subtotal),
+      shipping: num(row.shipping),
+      total: num(row.total),
+      promoCode: row.promo_code ?? null,
+      promoDiscount: row.promo_discount == null ? null : num(row.promo_discount),
+      freeShipping: !!row.free_shipping,
+      paymentMethod: row.payment_method,
+      bankSlipUrl: row.bank_slip_url ?? null,
+    });
+
     return j(
       {
         ok: true,
