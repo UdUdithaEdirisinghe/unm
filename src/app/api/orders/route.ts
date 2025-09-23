@@ -1,16 +1,18 @@
-// src/app/api/orders/route.ts
-// Create order / List orders (admin)
+// app/api/orders/route.ts  (or src/app/api/orders/route.ts)
 import { NextResponse } from "next/server";
 import sql, { toJson } from "../../../lib/db";
-import { getPromoByCode, isPromoActive, computePromoDiscount } from "../../../lib/promos";
+import {
+  getPromoByCode,
+  isPromoActive,
+  computePromoDiscount,
+} from "../../../lib/promos";
 import type { Order } from "../../../lib/products";
-import { sendOrderEmails } from "../../../lib/mail"; // 👈 added
+import { sendOrderEmails, type OrderEmail } from "../../../lib/mail";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
-
 type CartLine = {
   id: string;
   name: string;
@@ -39,7 +41,9 @@ function parseItems(raw: any): CartLine[] {
 function rowToOrder(r: any): Order {
   return {
     id: String(r.id),
-    createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+    createdAt: r.created_at
+      ? new Date(r.created_at).toISOString()
+      : new Date().toISOString(),
     status: r.status as Order["status"],
     customer: r.customer || {
       firstName: "",
@@ -58,7 +62,7 @@ function rowToOrder(r: any): Order {
     paymentMethod: (r.payment_method as Order["paymentMethod"]) ?? "COD",
     bankSlipName: r.bank_slip_name ?? null,
     bankSlipUrl: r.bank_slip_url ?? null,
-    promoKind: (r.promo_kind as Order["promoKind"]) ?? null, // optional column if you added it
+    promoKind: (r.promo_kind as Order["promoKind"]) ?? null,
   };
 }
 
@@ -104,7 +108,12 @@ export async function POST(req: Request) {
       names.set(String(r.id), String(r.name));
     }
 
-    const shortages: { id: string; name: string; requested: number; available: number }[] = [];
+    const shortages: {
+      id: string;
+      name: string;
+      requested: number;
+      available: number;
+    }[] = [];
     for (const it of items) {
       const available = stock.has(it.id) ? (stock.get(it.id) as number) : 0;
       if (it.quantity > available) {
@@ -118,16 +127,24 @@ export async function POST(req: Request) {
     }
     if (shortages.length) {
       return j(
-        { error: "Some items are not available in the requested quantity.", shortages },
+        {
+          error: "Some items are not available in the requested quantity.",
+          shortages,
+        },
         409
       );
     }
 
     /* 2) totals & code handling */
-    const subtotal = items.reduce((s, it) => s + num(it.price) * it.quantity, 0);
+    const subtotal = items.reduce(
+      (s, it) => s + num(it.price) * it.quantity,
+      0
+    );
     const baseShipping = num(body.shipping, 400);
 
-    const codeRaw: string = String(body.promoCode || "").trim().toUpperCase();
+    const codeRaw: string = String(body.promoCode || "")
+      .trim()
+      .toUpperCase();
 
     let promo_code: string | null = null;
     let promo_discount = 0;
@@ -139,7 +156,10 @@ export async function POST(req: Request) {
       // try PROMO first
       const promo = await getPromoByCode(codeRaw);
       if (promo && isPromoActive(promo)) {
-        const { discount, freeShipping } = computePromoDiscount(promo, subtotal);
+        const { discount, freeShipping } = computePromoDiscount(
+          promo,
+          subtotal
+        );
         promo_code = promo.code;
         promo_discount = num(discount, 0);
         free_shipping = !!freeShipping;
@@ -158,7 +178,8 @@ export async function POST(req: Request) {
           !!sc &&
           !!sc.enabled &&
           sc.used_order_id == null &&
-          (!sc.starts_at || new Date(sc.starts_at).getTime() <= now.getTime()) &&
+          (!sc.starts_at ||
+            new Date(sc.starts_at).getTime() <= now.getTime()) &&
           (!sc.ends_at || new Date(sc.ends_at).getTime() >= now.getTime());
 
         if (active) {
@@ -253,24 +274,34 @@ export async function POST(req: Request) {
 
     const row = created[0];
 
-    // 6) Send emails (fire-and-forget; never blocks order)
-    // Provide plain/ISO strings where expected by mail.ts
-    sendOrderEmails({
+    // fire-and-forget email (don’t block API response)
+    const emailPayload: OrderEmail = {
       id: String(row.id),
       createdAt: row.created_at
         ? new Date(row.created_at).toISOString()
         : new Date().toISOString(),
-      customer: row.customer,
-      items: row.items,
-      subtotal: num(row.subtotal),
-      shipping: num(row.shipping),
-      total: num(row.total),
-      promoCode: row.promo_code ?? null,
-      promoDiscount: row.promo_discount == null ? null : num(row.promo_discount),
-      freeShipping: !!row.free_shipping,
-      paymentMethod: row.payment_method,
-      bankSlipUrl: row.bank_slip_url ?? null,
-    });
+      customer: customer as OrderEmail["customer"],
+      items: items.map((i) => ({
+        name: i.name,
+        quantity: i.quantity,
+        price: i.price,
+        slug: i.slug,
+      })),
+      subtotal,
+      shipping,
+      total,
+      promoCode: promo_code,
+      promoDiscount: promo_discount || null,
+      freeShipping: free_shipping,
+      paymentMethod: payment_method,
+      bankSlipUrl: bank_slip_url,
+    };
+
+    // intentionally not awaited; logs will appear in Vercel if something fails
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    sendOrderEmails(emailPayload).catch((e) =>
+      console.error("sendOrderEmails error:", e)
+    );
 
     return j(
       {
@@ -279,7 +310,8 @@ export async function POST(req: Request) {
         subtotal: num(row.subtotal),
         shipping: num(row.shipping),
         promoCode: row.promo_code ?? null,
-        promoDiscount: row.promo_discount == null ? null : num(row.promo_discount),
+        promoDiscount:
+          row.promo_discount == null ? null : num(row.promo_discount),
         freeShipping: !!row.free_shipping,
         total: num(row.total),
         promoKind,
