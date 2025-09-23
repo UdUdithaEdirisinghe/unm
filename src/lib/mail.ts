@@ -8,41 +8,26 @@ const {
   SMTP_PASS,
   MAIL_FROM,
   MAIL_TO_ORDERS,
-  NODE_ENV,
 } = process.env;
 
 let transporter: nodemailer.Transporter | null = null;
-let verifiedOnce = false;
-
-function asInt(v: any, d: number) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : d;
-}
 
 function getTransporter() {
   if (transporter) return transporter;
 
-  const port = asInt(SMTP_PORT, 587);
-  const secure = port === 465; // 465 = SSL/TLS, 587 = STARTTLS
-
+  // Port 587 = STARTTLS -> secure MUST be false
   transporter = nodemailer.createTransport({
     host: SMTP_HOST,
-    port,
-    secure,
+    port: Number(SMTP_PORT || 587),
+    secure: false,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
-    // Helpful defaults for cloud hosts + Zoho
-    tls: {
-      minVersion: "TLSv1.2",
-    },
   });
 
   return transporter;
 }
 
-/* ---------------- Email templates ---------------- */
-
 type Line = { name: string; quantity: number; price: number; slug?: string };
-type OrderEmail = {
+export type OrderEmail = {
   id: string;
   createdAt: string;
   customer: {
@@ -82,9 +67,7 @@ function itemsTable(items: Line[]) {
       <td style="padding:6px 8px;border:1px solid #e5e7eb">${i.name}</td>
       <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:center">${i.quantity}</td>
       <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:right">${money(i.price)}</td>
-      <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:right">${money(
-        i.price * i.quantity
-      )}</td>
+      <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:right">${money(i.price * i.quantity)}</td>
     </tr>`
     )
     .join("");
@@ -137,10 +120,12 @@ function renderAdminEmail(o: OrderEmail) {
   <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
     <h2 style="margin:0 0 8px">New order received: ${o.id}</h2>
     <div>Time: ${new Date(o.createdAt).toLocaleString()}</div>
-    <div>Payment: ${o.paymentMethod}${o.bankSlipUrl ? ` — Slip: ${o.bankSlipUrl}` : ""}</div>
-    <div>Customer: ${o.customer.firstName} ${o.customer.lastName} — ${o.customer.email}${
-    o.customer.phone ? " / " + o.customer.phone : ""
-  }</div>
+    <div>Payment: ${o.paymentMethod}${
+      o.bankSlipUrl ? ` — Slip: ${o.bankSlipUrl}` : ""
+    }</div>
+    <div>Customer: ${o.customer.firstName} ${o.customer.lastName} — ${
+    o.customer.email
+  } ${o.customer.phone ? " / " + o.customer.phone : ""}</div>
 
     <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0">
       <thead>
@@ -155,59 +140,43 @@ function renderAdminEmail(o: OrderEmail) {
     </table>
 
     <div>Subtotal: <b>${money(o.subtotal)}</b> ${
-      o.promoDiscount ? `| Discount: -${money(o.promoDiscount)} (${o.promoCode ?? "code"})` : ""
-    } | Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b> | Grand: <b>${money(o.total)}</b></div>
+      o.promoDiscount
+        ? `| Discount: -${money(o.promoDiscount)} (${o.promoCode ?? "code"})`
+        : ""
+    } | Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b> | Grand: <b>${money(
+    o.total
+  )}</b></div>
     ${o.customer.notes ? `<div style="margin-top:8px"><b>Notes:</b> ${o.customer.notes}</div>` : ""}
   </div>`;
 }
 
-/* ---------------- Public send API ---------------- */
-
 export async function sendOrderEmails(order: OrderEmail) {
+  console.log("📧 sendOrderEmails called:", order.id);
   try {
     const t = getTransporter();
 
-    // Verify once per process so deployment logs show a clear reason if Zoho rejects
-    if (!verifiedOnce) {
-      try {
-        await t.verify();
-        console.log("✅ SMTP verify succeeded (host=%s port=%s secure=%s user=%s)",
-          SMTP_HOST, SMTP_PORT, (asInt(SMTP_PORT, 587) === 465), SMTP_USER);
-      } catch (err) {
-        console.error("❌ SMTP verify failed:", err);
-      }
-      verifiedOnce = true;
-    }
+    // helpful at deploy-time to confirm SMTP on Vercel
+    await t.verify();
+    console.log("✅ SMTP verify OK (host=%s, user=%s)", SMTP_HOST, SMTP_USER);
 
-    const fromAddress = MAIL_FROM || `Manny.lk <${SMTP_USER}>`;
-
-    // Customer email
+    // customer email
     await t.sendMail({
-      from: fromAddress,          // MUST be the same domain/account Zoho expects
+      from: MAIL_FROM || `Manny.lk <${SMTP_USER}>`,
       to: order.customer.email,
       subject: `Order Confirmation — ${order.id}`,
       html: renderCustomerEmail(order),
-      replyTo: MAIL_TO_ORDERS || SMTP_USER, // replies go to your team mailbox
     });
+    console.log("📧 Customer email sent →", order.customer.email);
 
-    // Admin email
+    // admin email
     await t.sendMail({
-      from: fromAddress,
-      to: MAIL_TO_ORDERS || SMTP_USER,
+      from: MAIL_FROM || `Manny.lk <${SMTP_USER}>`,
+      to: MAIL_TO_ORDERS || (SMTP_USER as string),
       subject: `New Order — ${order.id} — ${order.customer.firstName} ${order.customer.lastName}`,
       html: renderAdminEmail(order),
     });
+    console.log("📧 Admin email sent →", MAIL_TO_ORDERS || SMTP_USER);
   } catch (err) {
-    // Never throw here—don’t block order creation
-    console.error("sendOrderEmails failed:", err);
-    if (NODE_ENV !== "production") {
-      console.error("ENV used:", {
-        SMTP_HOST,
-        SMTP_PORT,
-        SMTP_USER,
-        MAIL_FROM,
-        MAIL_TO_ORDERS,
-      });
-    }
+    console.error("❌ sendOrderEmails failed:", err);
   }
 }
