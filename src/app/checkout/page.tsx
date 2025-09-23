@@ -29,7 +29,7 @@ export default function CheckoutPage() {
     payment: "COD" as Pay,
   });
 
-  // Optional shipping
+  // Optional shipping (different address)
   const [shipDifferent, setShipDifferent] = useState(false);
   const [ship, setShip] = useState({
     firstName: "",
@@ -40,13 +40,13 @@ export default function CheckoutPage() {
     postal: "",
   });
 
-  // Bank slip
+  // Bank slip (for BANK)
   const [slipFile, setSlipFile] = useState<File | null>(null);
 
   // Terms
   const [agree, setAgree] = useState(false);
 
-  // Promo / store credit
+  // Promo (works for promo & store-credit)
   const [codeInput, setCodeInput] = useState("");
   const [applied, setApplied] = useState<PromoResult | null>(null);
   const [checking, setChecking] = useState(false);
@@ -55,7 +55,7 @@ export default function CheckoutPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Shortages
+  // Shortages from server
   const [shortages, setShortages] = useState<Shortage[] | null>(null);
 
   // Totals
@@ -72,26 +72,63 @@ export default function CheckoutPage() {
       setShip((s) => ({ ...s, [k]: e.target.value }));
   }
 
-  // 🔹 FIX: check promos first, then store credits
+  /** Normalize various validate responses into a single shape.
+   * Accepts: {valid:true} or {ok:true} or {success:true}
+   * May include data under promo or credit.
+   * Uses server-provided discount if present; otherwise safely derives.
+   */
+  function normalizeValidation(data: any, fallbackCode: string): PromoResult | null {
+    const isValid = data && (data.valid === true || data.ok === true || data.success === true);
+    if (!isValid) return null;
+
+    const entity = data.promo || data.credit || {};
+    const code = data.code || entity.code || fallbackCode;
+
+    // Prefer server-calculated discount
+    let discount = Number.isFinite(data?.discount) ? Number(data.discount) : 0;
+
+    // Some backends return {amount: number} for store credit
+    if (!discount && Number.isFinite(data?.amount)) discount = Number(data.amount);
+
+    // As a last resort (only if server omitted), derive conservative discount
+    if (!discount && entity) {
+      const t = String(entity.type || entity.kind || "").toLowerCase();
+      const val = Number(entity.value);
+      if (Number.isFinite(val) && val > 0) {
+        if (t === "percent") discount = Math.floor((subtotal * val) / 100);
+        if (t === "fixed") discount = val;
+      }
+    }
+
+    // free shipping flag can be top-level or implied by type
+    const freeShipping =
+      !!data.freeShipping ||
+      String(entity.type || entity.kind || "").toLowerCase() === "freeshipping";
+
+    // Never let client compute a negative/insane number
+    if (!Number.isFinite(discount) || discount < 0) discount = 0;
+    if (discount > subtotal) discount = subtotal;
+
+    return { code, discount, freeShipping };
+  }
+
+  // ✅ FIX: try promos first, then store credits; tolerate different payload shapes
   async function applyCode() {
     const trimmed = codeInput.trim().toUpperCase();
     if (!trimmed) return;
     setChecking(true);
     setErr(null);
 
-    async function tryEndpoint(url: string) {
+    async function tryEndpoint(url: string): Promise<PromoResult | null> {
       const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: trimmed, subtotal }),
       });
       const data = await r.json().catch(() => ({}));
-      if (!r.ok || !data?.valid) return null;
-      return {
-        code: data.code || trimmed,
-        freeShipping: !!data.freeShipping,
-        discount: Number(data.discount || 0),
-      } as PromoResult;
+      // if endpoint returns a 2xx but says invalid, normalizeValidation will return null
+      if (!r.ok) return null;
+      return normalizeValidation(data, trimmed);
     }
 
     try {
@@ -154,7 +191,9 @@ export default function CheckoutPage() {
         !ship.city.trim() ||
         !rePhone10.test(ship.phone)
       ) {
-        return setErr("For shipping to a different address, please enter recipient name, address, town/city and a valid 10-digit phone.");
+        return setErr(
+          "For shipping to a different address, please enter recipient name, address, town/city and a valid 10-digit phone."
+        );
       }
       shippingAddress = ship;
     }
@@ -173,7 +212,7 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           items,
           paymentMethod: bill.payment,
-          promoCode: applied?.code,
+          promoCode: applied?.code, // promo or store-credit
           bankSlipUrl,
           shipping,
           customer: bill,
@@ -186,7 +225,10 @@ export default function CheckoutPage() {
         const data = await r.json().catch(() => ({}));
         const arr = Array.isArray(data?.shortages) ? data.shortages : [];
         if (arr.length) setShortages(arr as Shortage[]);
-        setErr(data?.error || "Some items are not available in the requested quantity. Please adjust your cart.");
+        setErr(
+          data?.error ||
+            "Some items are not available in the requested quantity. Please adjust your cart."
+        );
         return;
       }
 
@@ -233,8 +275,9 @@ export default function CheckoutPage() {
         </div>
       )}
 
+      {/* Desktop: 2+1 grid so summary never collapses under shipping section */}
       <form onSubmit={place} className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        {/* LEFT */}
+        {/* LEFT (md: span 2) */}
         <div className="md:col-span-2 space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <input className="field" placeholder="First name" value={bill.firstName} onChange={updBill("firstName")} required />
@@ -255,7 +298,7 @@ export default function CheckoutPage() {
 
           <textarea className="textarea" placeholder="Order notes (optional)" value={bill.notes} onChange={updBill("notes")} />
 
-          {/* Ship different */}
+          {/* Ship to different */}
           <div className="panel p-4 space-y-3">
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={shipDifferent} onChange={(e) => setShipDifferent(e.target.checked)} />
@@ -279,7 +322,7 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* RIGHT */}
+        {/* RIGHT (sticky summary) */}
         <div className="md:col-span-1 md:sticky md:top-24 self-start">
           <div className="panel p-4 space-y-4">
             <h2 className="text-lg font-semibold">Your order</h2>
@@ -293,7 +336,7 @@ export default function CheckoutPage() {
               ))}
             </div>
 
-            {/* Promo / Store credit */}
+            {/* One input for promo or store credit */}
             <div className="mt-2">
               {applied ? (
                 <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
@@ -308,7 +351,12 @@ export default function CheckoutPage() {
                     value={codeInput}
                     onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
                   />
-                  <button type="button" className="btn-secondary" onClick={applyCode} disabled={checking}>
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={applyCode}
+                    disabled={checking}
+                  >
                     {checking ? "Checking…" : "Apply"}
                   </button>
                 </div>
