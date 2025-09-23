@@ -143,10 +143,10 @@ export default function ProductDetail({ product }: { product: Product }) {
 
         {/* Overview (Short Description) */}
         {product.shortDesc && (
-          <>
+            <div className="mb-6 max-w-prose leading-relaxed text-slate-300">
             <h3 className="font-semibold text-white mb-2">Overview</h3>
-            <p className="mb-6 whitespace-pre-line text-slate-300">{product.shortDesc}</p>
-          </>
+            <p className="whitespace-pre-line">{product.shortDesc}</p>
+          </div>
         )}
 
         {/* Specifications */}
