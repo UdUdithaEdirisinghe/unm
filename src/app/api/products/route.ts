@@ -6,7 +6,6 @@ export const revalidate = 0;
 
 const j = (data: any, status = 200) => NextResponse.json(data, { status });
 
-/* GET /api/products */
 export async function GET() {
   try {
     const products = await getProducts();
@@ -16,7 +15,6 @@ export async function GET() {
   }
 }
 
-/* POST /api/products */
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Partial<Product> & { images?: string[] };
@@ -26,16 +24,10 @@ export async function POST(req: Request) {
     const price = Number(body.price);
     const stock = Number(body.stock ?? 0);
 
-    // images: prefer array; fallback to single image
-    const images = Array.isArray(body.images)
-      ? body.images
-      : (body.image ? [body.image] : []);
+    const images = Array.isArray(body.images) ? body.images : (body.image ? [body.image] : []);
 
     if (!name || !slug || !Number.isFinite(price) || images.length === 0) {
-      return j(
-        { error: "Missing required fields: name, slug, price, images." },
-        400
-      );
+      return j({ error: "Missing required fields: name, slug, price, images." }, 400);
     }
 
     const created = await createProduct({
@@ -44,9 +36,7 @@ export async function POST(req: Request) {
       images,
       price,
       salePrice:
-        body.salePrice === null || body.salePrice === undefined
-          ? null
-          : Number(body.salePrice),
+        body.salePrice === null || body.salePrice === undefined ? null : Number(body.salePrice),
       shortDesc: body.shortDesc ?? null,
       brand: body.brand ?? null,
       category: body.category ?? null,

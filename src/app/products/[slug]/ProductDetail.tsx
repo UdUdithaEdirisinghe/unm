@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useCart } from "../../../components/cart/CartProvider";
 import type { Product } from "../../../lib/products";
 import { formatCurrency } from "../../../lib/format";
@@ -12,9 +12,13 @@ export default function ProductDetail({ product }: { product: Product }) {
   const { add } = useCart();
   const [qty, setQty] = useState(1);
 
-  const imgs = (product.images && product.images.length ? product.images : [product.image]).map(
-    (s) => (s.startsWith("/") || /^https?:\/\//.test(s) ? s : `/${s}`)
-  );
+  const imgs = useMemo(() => {
+    const arr = (product.images && product.images.length ? product.images : [product.image]).map(
+      (s) => (s.startsWith("/") || /^https?:\/\//.test(s) ? s : `/${s}`)
+    );
+    return arr.length ? arr : ["/placeholder.png"];
+  }, [product.images, product.image]);
+
   const [index, setIndex] = useState(0);
 
   const salePrice = product.salePrice;
@@ -97,7 +101,9 @@ export default function ProductDetail({ product }: { product: Product }) {
             {imgs.map((src, i) => (
               <button
                 key={i}
-                className={`shrink-0 rounded border ${i === index ? "border-indigo-500" : "border-slate-700"} bg-slate-900`}
+                className={`shrink-0 rounded border ${
+                  i === index ? "border-indigo-500" : "border-slate-700"
+                } bg-slate-900`}
                 onClick={() => setIndex(i)}
                 aria-label={`Image ${i + 1}`}
               >
@@ -123,9 +129,7 @@ export default function ProductDetail({ product }: { product: Product }) {
 
         <div className="mb-6">
           <div className="flex items-baseline gap-2">
-            <p className="text-2xl font-bold text-white">
-              {formatCurrency(priceToUse)}
-            </p>
+            <p className="text-2xl font-bold text-white">{formatCurrency(priceToUse)}</p>
             <span className="hidden sm:inline text-slate-400 line-through">
               {hasSale ? formatCurrency(product.price) : ""}
             </span>
@@ -137,21 +141,44 @@ export default function ProductDetail({ product }: { product: Product }) {
           )}
         </div>
 
+        {/* Overview (Short Description) */}
+        {product.shortDesc && (
+          <>
+            <h3 className="font-semibold text-white mb-2">Overview</h3>
+            <p className="mb-6 whitespace-pre-line text-slate-300">{product.shortDesc}</p>
+          </>
+        )}
+
+        {/* Specifications */}
         <h3 className="font-semibold text-white mb-2">Specifications</h3>
         <ul className="list-disc pl-5 text-slate-300 mb-6">{renderSpecs()}</ul>
 
         <div className="flex items-center gap-3">
           <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-800">
-            <button type="button" className="h-9 w-9 border-r border-slate-700 text-white" onClick={() => setQty((n) => Math.max(1, n - 1))}>−</button>
+            <button
+              type="button"
+              className="h-9 w-9 border-r border-slate-700 text-white"
+              onClick={() => setQty((n) => Math.max(1, n - 1))}
+            >
+              −
+            </button>
             <span className="px-3 tabular-nums text-white">{qty}</span>
-            <button type="button" className="h-9 w-9 border-l border-slate-700 text-white" onClick={() => setQty((n) => n + 1)}>+</button>
+            <button
+              type="button"
+              className="h-9 w-9 border-l border-slate-700 text-white"
+              onClick={() => setQty((n) => n + 1)}
+            >
+              +
+            </button>
           </div>
 
           <button type="button" className="btn-primary" disabled={outOfStock} onClick={handleAddToCart}>
             {outOfStock ? "Unavailable" : "Add to Cart"}
           </button>
 
-          <Link href="/products" className="btn-secondary">Back to Products</Link>
+          <Link href="/products" className="btn-secondary">
+            Back to Products
+          </Link>
         </div>
       </div>
     </div>

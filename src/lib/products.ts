@@ -1,16 +1,14 @@
 import sql, { toJson } from "./db";
 
-/* ========= Types ========= */
-
 export type Product = {
   id: string;
   name: string;
   slug: string;
-  image: string;            // primary image (first)
-  images?: string[];        // all images (first = primary)
+  image: string;
+  images?: string[];
   price: number;
   salePrice?: number | null;
-  shortDesc?: string | null;
+  shortDesc?: string | null;     // <-- overview
   brand?: string | null;
   category?: string | null;
   specs?: Record<string, string> | null;
@@ -52,7 +50,6 @@ export type Order = {
   paymentMethod: "COD" | "BANK";
   bankSlipName?: string | null;
   bankSlipUrl?: string | null;
-
   items: CartItem[];
   subtotal: number;
   shipping: number;
@@ -60,12 +57,8 @@ export type Order = {
   promoDiscount?: number | null;
   freeShipping: boolean;
   total: number;
-
-  /** Whether promoCode was a normal promo or a store credit (nullable if none) */
   promoKind?: "promo" | "store_credit" | null;
 };
-
-/* ========= Helpers ========= */
 
 function normalizeImages(input: unknown): string[] {
   if (!input) return [];
@@ -79,8 +72,6 @@ function normalizeImages(input: unknown): string[] {
   return s ? [(s.startsWith("/") || /^https?:\/\//i.test(s) ? s : `/${s}`)] : [];
 }
 
-/* ========= Mappers ========= */
-
 function rowToProduct(r: any): Product {
   const imgs = normalizeImages(r.images);
   const primary = imgs[0] || String(r.image || "") || "/placeholder.png";
@@ -92,7 +83,7 @@ function rowToProduct(r: any): Product {
     images: imgs.length ? imgs : (primary ? [primary] : []),
     price: Number(r.price),
     salePrice: r.sale_price === null ? null : Number(r.sale_price),
-    shortDesc: r.short_desc ?? null,
+    shortDesc: r.short_desc ?? null,         // <-- maps to overview
     brand: r.brand ?? null,
     category: r.category ?? null,
     specs: r.specs || null,
@@ -101,8 +92,6 @@ function rowToProduct(r: any): Product {
   };
 }
 
-/* ========= Product queries ========= */
-
 export async function getProducts(): Promise<Product[]> {
   const rows = await sql`
     SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at
@@ -110,11 +99,6 @@ export async function getProducts(): Promise<Product[]> {
     ORDER BY created_at DESC
   `;
   return rows.map(rowToProduct);
-}
-
-// alias kept for any legacy imports
-export async function readProducts() {
-  return getProducts();
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {
@@ -130,7 +114,6 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
 export async function createProduct(p: Omit<Product, "id" | "createdAt" | "image">) {
   const id = `p_${Date.now()}`;
   const imgs = normalizeImages(p.images || []);
-  // legacy "image" column mirrors first image for compatibility
   const primary = imgs[0] || "/placeholder.png";
 
   const rows = await sql`
