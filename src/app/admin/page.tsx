@@ -1,4 +1,3 @@
-// src/app/admin/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -386,7 +385,7 @@ export default function AdminPage() {
     }
   }
   async function deletePromo(code: string) {
-    if (!confirm(`Delete promo ${code}?`)) return;
+    if (`!confirm(Delete promo ${code}?)`) return;
     const r = await fetch(`/api/promos/${code}`, { method: "DELETE" });
     if (r.ok) setPromos(await safeGetArray<Promo>("/api/promos"));
   }
@@ -450,7 +449,7 @@ export default function AdminPage() {
     }
   }
   async function deleteCredit(code: string) {
-    if (!confirm(`Delete store credit ${code}?`)) return;
+    if (`!confirm(Delete store credit ${code}?)`) return;
     const r = await fetch(`/api/store-credits/${code}`, { method: "DELETE" });
     if (r.ok) setCredits(await safeGetArray<StoreCredit>("/api/store-credits"));
   }

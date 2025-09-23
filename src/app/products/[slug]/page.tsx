@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 import { getProductBySlug } from "../../../lib/products";
-import ProductDetail from "./ProductDetail"; // your client component in same folder
+import ProductDetail from "./ProductDetail";
 
 type Props = { params: { slug: string } };
 

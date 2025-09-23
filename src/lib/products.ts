@@ -7,7 +7,7 @@ export type Product = {
   name: string;
   slug: string;
   image: string;            // primary image (first)
-  images?: string[];        // NEW: all images (first = primary)
+  images?: string[];        // all images (first = primary)
   price: number;
   salePrice?: number | null;
   shortDesc?: string | null;
@@ -61,7 +61,7 @@ export type Order = {
   freeShipping: boolean;
   total: number;
 
-  /** NEW: whether promoCode was a normal promo or a store credit (nullable if none) */
+  /** Whether promoCode was a normal promo or a store credit (nullable if none) */
   promoKind?: "promo" | "store_credit" | null;
 };
 
@@ -112,7 +112,7 @@ export async function getProducts(): Promise<Product[]> {
   return rows.map(rowToProduct);
 }
 
-// alias for legacy imports
+// alias kept for any legacy imports
 export async function readProducts() {
   return getProducts();
 }
@@ -130,7 +130,7 @@ export async function getProductBySlug(slug: string): Promise<Product | null> {
 export async function createProduct(p: Omit<Product, "id" | "createdAt" | "image">) {
   const id = `p_${Date.now()}`;
   const imgs = normalizeImages(p.images || []);
-  // keep legacy "image" column as the first image for compatibility
+  // legacy "image" column mirrors first image for compatibility
   const primary = imgs[0] || "/placeholder.png";
 
   const rows = await sql`
@@ -157,7 +157,6 @@ export async function createProduct(p: Omit<Product, "id" | "createdAt" | "image
 }
 
 export async function updateProduct(id: string, patch: Partial<Product>) {
-  // read existing
   const current = await sql`
     SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock
     FROM products WHERE id = ${id} LIMIT 1
@@ -165,7 +164,6 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
   if (!current[0]) return null;
 
   const prev = rowToProduct(current[0]);
-  // normalize images if present
   const imgs = patch.images ? normalizeImages(patch.images) : prev.images || [];
   const primary = imgs[0] || prev.image;
 
