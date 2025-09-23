@@ -1,25 +1,15 @@
-// app/api/orders/route.ts  (or src/app/api/orders/route.ts)
+// src/app/api/orders/route.ts
 import { NextResponse } from "next/server";
 import sql, { toJson } from "../../../lib/db";
-import {
-  getPromoByCode,
-  isPromoActive,
-  computePromoDiscount,
-} from "../../../lib/promos";
+import { getPromoByCode, isPromoActive, computePromoDiscount } from "../../../lib/promos";
 import type { Order } from "../../../lib/products";
-import { sendOrderEmails, type OrderEmail } from "../../../lib/mail";
+import { sendOrderEmails } from "../../../lib/mail";  // <--- added
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
-type CartLine = {
-  id: string;
-  name: string;
-  slug?: string;
-  price: number;
-  quantity: number;
-};
+type CartLine = { id: string; name: string; slug?: string; price: number; quantity: number };
 
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
@@ -41,9 +31,7 @@ function parseItems(raw: any): CartLine[] {
 function rowToOrder(r: any): Order {
   return {
     id: String(r.id),
-    createdAt: r.created_at
-      ? new Date(r.created_at).toISOString()
-      : new Date().toISOString(),
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
     status: r.status as Order["status"],
     customer: r.customer || {
       firstName: "",
@@ -66,7 +54,7 @@ function rowToOrder(r: any): Order {
   };
 }
 
-// recognizable order id: MNY-YYYYMMDD-#### (numeric suffix)
+// recognizable order id: MNY-YYYYMMDD-####
 function generateOrderId() {
   const d = new Date();
   const y = d.getFullYear();
@@ -108,12 +96,7 @@ export async function POST(req: Request) {
       names.set(String(r.id), String(r.name));
     }
 
-    const shortages: {
-      id: string;
-      name: string;
-      requested: number;
-      available: number;
-    }[] = [];
+    const shortages: { id: string; name: string; requested: number; available: number }[] = [];
     for (const it of items) {
       const available = stock.has(it.id) ? (stock.get(it.id) as number) : 0;
       if (it.quantity > available) {
@@ -127,24 +110,16 @@ export async function POST(req: Request) {
     }
     if (shortages.length) {
       return j(
-        {
-          error: "Some items are not available in the requested quantity.",
-          shortages,
-        },
+        { error: "Some items are not available in the requested quantity.", shortages },
         409
       );
     }
 
     /* 2) totals & code handling */
-    const subtotal = items.reduce(
-      (s, it) => s + num(it.price) * it.quantity,
-      0
-    );
+    const subtotal = items.reduce((s, it) => s + num(it.price) * it.quantity, 0);
     const baseShipping = num(body.shipping, 400);
 
-    const codeRaw: string = String(body.promoCode || "")
-      .trim()
-      .toUpperCase();
+    const codeRaw: string = String(body.promoCode || "").trim().toUpperCase();
 
     let promo_code: string | null = null;
     let promo_discount = 0;
@@ -153,19 +128,14 @@ export async function POST(req: Request) {
     let usedStoreCredit = false;
 
     if (codeRaw) {
-      // try PROMO first
       const promo = await getPromoByCode(codeRaw);
       if (promo && isPromoActive(promo)) {
-        const { discount, freeShipping } = computePromoDiscount(
-          promo,
-          subtotal
-        );
+        const { discount, freeShipping } = computePromoDiscount(promo, subtotal);
         promo_code = promo.code;
         promo_discount = num(discount, 0);
         free_shipping = !!freeShipping;
         promoKind = "promo";
       } else {
-        // try STORE CREDIT
         const rows: any[] = await sql`
           SELECT code, amount, enabled, min_order_total, starts_at, ends_at, used_order_id
           FROM store_credits
@@ -178,8 +148,7 @@ export async function POST(req: Request) {
           !!sc &&
           !!sc.enabled &&
           sc.used_order_id == null &&
-          (!sc.starts_at ||
-            new Date(sc.starts_at).getTime() <= now.getTime()) &&
+          (!sc.starts_at || new Date(sc.starts_at).getTime() <= now.getTime()) &&
           (!sc.ends_at || new Date(sc.ends_at).getTime() >= now.getTime());
 
         if (active) {
@@ -263,7 +232,6 @@ export async function POST(req: Request) {
       await sql`UPDATE products SET stock = stock - ${it.quantity} WHERE id = ${it.id}`;
     }
 
-    // 5) If we used a STORE CREDIT, mark it used (after order creation)
     if (usedStoreCredit && promo_code) {
       await sql`
         UPDATE store_credits
@@ -274,19 +242,12 @@ export async function POST(req: Request) {
 
     const row = created[0];
 
-    // fire-and-forget email (don’t block API response)
-    const emailPayload: OrderEmail = {
-      id: String(row.id),
-      createdAt: row.created_at
-        ? new Date(row.created_at).toISOString()
-        : new Date().toISOString(),
-      customer: customer as OrderEmail["customer"],
-      items: items.map((i) => ({
-        name: i.name,
-        quantity: i.quantity,
-        price: i.price,
-        slug: i.slug,
-      })),
+    // 5) Send emails (customer + admin) — non-blocking
+    sendOrderEmails({
+      id: row.id,
+      createdAt: row.created_at,
+      customer,
+      items,
       subtotal,
       shipping,
       total,
@@ -295,30 +256,26 @@ export async function POST(req: Request) {
       freeShipping: free_shipping,
       paymentMethod: payment_method,
       bankSlipUrl: bank_slip_url,
-    };
-
-    // intentionally not awaited; logs will appear in Vercel if something fails
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    sendOrderEmails(emailPayload).catch((e) =>
-      console.error("sendOrderEmails error:", e)
-    );
+    }).catch(err => {
+      console.error("sendOrderEmails failed:", err);
+    });
 
     return j(
       {
         ok: true,
         orderId: row.id,
-        subtotal: num(row.subtotal),
-        shipping: num(row.shipping),
-        promoCode: row.promo_code ?? null,
-        promoDiscount:
-          row.promo_discount == null ? null : num(row.promo_discount),
-        freeShipping: !!row.free_shipping,
-        total: num(row.total),
+        subtotal,
+        shipping,
+        promoCode: promo_code,
+        promoDiscount: promo_discount || null,
+        freeShipping: free_shipping,
+        total,
         promoKind,
       },
       201
     );
   } catch (e: any) {
+    console.error("Order creation failed:", e);
     return j({ error: e?.message || "Failed to create order." }, 500);
   }
 }
