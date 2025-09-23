@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getPromos, createPromo, type Promo } from "../../../lib/promos";
+import { getPromos, upsertPromo, type Promo } from "../../../lib/promos";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const j = (data: any, status = 200) =>
-  NextResponse.json(data, { status });
+const j = (data: any, status = 200) => NextResponse.json(data, { status });
 
+/** GET /api/promos */
 export async function GET() {
   try {
     const promos = await getPromos();
@@ -16,32 +16,39 @@ export async function GET() {
   }
 }
 
+/** POST /api/promos  (create) */
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as Partial<Promo>;
 
-    const code = String(body.code || "").trim().toUpperCase();
-    const type = String(body.type || "").trim() as Promo["type"];
+    const code = String(body.code || "").toUpperCase().trim();
+    const type = String(body.type || "").trim();
     const enabled = Boolean(body.enabled);
-    const value =
-      type === "freeShipping" ? null :
-      (body.value === undefined || body.value === null ? 0 : Number(body.value));
+    const startsAt = body.startsAt ?? null;
+    const endsAt = body.endsAt ?? null;
 
-    if (!code || !type || !["percent","fixed","freeShipping"].includes(type)) {
-      return j({ error: "Missing/invalid fields: code, type." }, 400);
+    if (!code || !["percent", "fixed", "freeShipping"].includes(type)) {
+      return j({ error: "Invalid code or type." }, 400);
     }
 
-    const created = await createPromo({
+    const value =
+      type === "freeShipping"
+        ? null
+        : Number.isFinite(Number(body.value))
+        ? Number(body.value)
+        : 0;
+
+    const saved = await upsertPromo({
       code,
-      type,
+      type: type as any,
       value,
       enabled,
-      startsAt: body.startsAt ?? null,
-      endsAt: body.endsAt ?? null,
-    } as Promo);
+      startsAt,
+      endsAt,
+    });
 
-    return j(created, 201);
+    return j(saved, 201);
   } catch (e: any) {
-    return j({ error: e?.message || "Failed to create promo." }, 500);
+    return j({ error: e?.message || "Failed to save promo." }, 500);
   }
 }

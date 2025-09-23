@@ -1,140 +1,108 @@
 import sql from "./db";
 
+/** Server model */
 export type PromoType = "percent" | "fixed" | "freeShipping";
-
 export type Promo = {
-  code: string;                 // UPPERCASE
+  code: string;
   type: PromoType;
-  value?: number | null;        // null for freeShipping
+  value?: number | null;        // null/undefined for freeShipping
   enabled: boolean;
   startsAt?: string | null;     // ISO
   endsAt?: string | null;       // ISO
-  createdAt?: string;
 };
 
+/** Map DB row -> Promo safely (no created_at assumptions) */
 function rowToPromo(r: any): Promo {
   return {
-    code: String(r.code),
+    code: String(r.code).toUpperCase(),
     type: String(r.type) as PromoType,
     value: r.value === null || r.value === undefined ? null : Number(r.value),
     enabled: Boolean(r.enabled),
     startsAt: r.starts_at ? new Date(r.starts_at).toISOString() : null,
     endsAt: r.ends_at ? new Date(r.ends_at).toISOString() : null,
-    createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
   };
 }
 
+/** List all promos */
 export async function getPromos(): Promise<Promo[]> {
   const rows = await sql`
-    SELECT code, type, value, enabled, starts_at, ends_at, created_at
+    SELECT code, type, value, enabled, starts_at, ends_at
     FROM promos
-    ORDER BY created_at DESC, code ASC
+    ORDER BY code ASC
   `;
   return rows.map(rowToPromo);
 }
 
-export async function getPromoByCode(code: string): Promise<Promo | null> {
+/** Get by code */
+export async function getPromo(code: string): Promise<Promo | null> {
   const rows = await sql`
-    SELECT code, type, value, enabled, starts_at, ends_at, created_at
+    SELECT code, type, value, enabled, starts_at, ends_at
     FROM promos
-    WHERE code = ${code}
+    WHERE code = ${code.toUpperCase()}
     LIMIT 1
   `;
   return rows[0] ? rowToPromo(rows[0]) : null;
 }
 
-/** Create. Fails if code exists. */
-export async function createPromo(p: Promo): Promise<Promo> {
+/** Create or update (by code) */
+export async function upsertPromo(p: Promo): Promise<Promo> {
+  const code = p.code.toUpperCase();
+  const val = p.type === "freeShipping" ? null : (p.value ?? 0);
+
   const rows = await sql`
     INSERT INTO promos (code, type, value, enabled, starts_at, ends_at)
-    VALUES (
-      ${p.code},
-      ${p.type},
-      ${p.type === "freeShipping" ? null : (p.value ?? 0)},
-      ${p.enabled},
-      ${p.startsAt ? new Date(p.startsAt) : null},
-      ${p.endsAt ? new Date(p.endsAt) : null}
-    )
-    RETURNING code, type, value, enabled, starts_at, ends_at, created_at
+    VALUES (${code}, ${p.type}, ${val}, ${p.enabled}, ${p.startsAt ?? null}, ${p.endsAt ?? null})
+    ON CONFLICT (code) DO UPDATE SET
+      type = EXCLUDED.type,
+      value = EXCLUDED.value,
+      enabled = EXCLUDED.enabled,
+      starts_at = EXCLUDED.starts_at,
+      ends_at = EXCLUDED.ends_at
+    RETURNING code, type, value, enabled, starts_at, ends_at
   `;
   return rowToPromo(rows[0]);
 }
 
-/** Update existing by code. */
-export async function updatePromo(code: string, patch: Partial<Promo>): Promise<Promo | null> {
-  const prev = await getPromoByCode(code);
-  if (!prev) return null;
-
-  const next: Promo = {
-    ...prev,
-    ...patch,
-    code: prev.code, // code is immutable key
-    value: (patch.type ?? prev.type) === "freeShipping"
-      ? null
-      : (patch.value !== undefined ? patch.value : prev.value ?? 0),
-    startsAt: patch.startsAt === undefined ? prev.startsAt : patch.startsAt,
-    endsAt: patch.endsAt === undefined ? prev.endsAt : patch.endsAt,
-  };
-
-  const rows = await sql`
-    UPDATE promos SET
-      type = ${next.type},
-      value = ${next.type === "freeShipping" ? null : (next.value ?? 0)},
-      enabled = ${next.enabled},
-      starts_at = ${next.startsAt ? new Date(next.startsAt) : null},
-      ends_at = ${next.endsAt ? new Date(next.endsAt) : null}
-    WHERE code = ${code}
-    RETURNING code, type, value, enabled, starts_at, ends_at, created_at
-  `;
-  return rows[0] ? rowToPromo(rows[0]) : null;
-}
-
+/** Delete */
 export async function deletePromo(code: string): Promise<boolean> {
-  const res = await sql`DELETE FROM promos WHERE code = ${code}`;
-  // @ts-ignore: res.count exists on postgres client drivers
-  return (res.count ?? res.rowCount ?? 0) > 0;
+  await sql`DELETE FROM promos WHERE code = ${code.toUpperCase()}`;
+  return true;
 }
 
-// ---- Add this helper to the bottom of src/lib/promos.ts ----
-export function evaluatePromo(
-  promo: Promo,
-  subtotal: number
-): {
+/** Validate against time window, enabled, and order total (when type !== freeShipping). */
+export function validatePromoForOrder(p: Promo | null, orderTotal: number): {
   valid: boolean;
   reason?: string;
+} {
+  if (!p) return { valid: false, reason: "NOT_FOUND" };
+  if (!p.enabled) return { valid: false, reason: "DISABLED" };
+
+  const now = Date.now();
+  if (p.startsAt && now < new Date(p.startsAt).getTime()) {
+    return { valid: false, reason: "NOT_STARTED" };
+  }
+  if (p.endsAt && now > new Date(p.endsAt).getTime()) {
+    return { valid: false, reason: "EXPIRED" };
+  }
+
+  // No minimum order rule for promos in this build (store credits have it)
+  // If you later add a min order rule for promos, check it here.
+
+  // Nothing else disqualifies it
+  return { valid: true };
+}
+
+/** Calculate discount amount (does not change validity). */
+export function computePromoDiscount(p: Promo, orderTotal: number): {
   discount: number;
   freeShipping: boolean;
 } {
-  const now = new Date();
-
-  if (!promo.enabled) {
-    return { valid: false, reason: "Promo is disabled.", discount: 0, freeShipping: false };
+  if (p.type === "freeShipping") return { discount: 0, freeShipping: true };
+  if (p.type === "percent") {
+    const pct = Math.max(0, Math.min(100, Number(p.value ?? 0)));
+    return { discount: Math.floor((orderTotal * pct) / 100), freeShipping: false };
   }
-
-  if (promo.startsAt && new Date(promo.startsAt) > now) {
-    return { valid: false, reason: "Promo not active yet.", discount: 0, freeShipping: false };
-  }
-  if (promo.endsAt && new Date(promo.endsAt) < now) {
-    return { valid: false, reason: "Promo has expired.", discount: 0, freeShipping: false };
-  }
-
-  const sub = Number.isFinite(subtotal) ? Math.max(0, Number(subtotal)) : 0;
-
-  if (promo.type === "freeShipping") {
-    return { valid: true, discount: 0, freeShipping: true };
-  }
-
-  if (promo.type === "percent") {
-    const pct = Math.max(0, Number(promo.value ?? 0));
-    const discount = Math.floor(sub * (pct / 100));
-    return { valid: discount > 0, discount, freeShipping: false, reason: discount > 0 ? undefined : "Subtotal too low." };
-  }
-
-  if (promo.type === "fixed") {
-    const amt = Math.max(0, Number(promo.value ?? 0));
-    const discount = Math.min(amt, sub);
-    return { valid: discount > 0, discount, freeShipping: false, reason: discount > 0 ? undefined : "Subtotal too low." };
-  }
-
-  return { valid: false, reason: "Invalid promo type.", discount: 0, freeShipping: false };
+  // fixed
+  const amt = Math.max(0, Number(p.value ?? 0));
+  return { discount: Math.min(orderTotal, amt), freeShipping: false };
 }

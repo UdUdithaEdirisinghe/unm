@@ -1,50 +1,30 @@
 import { NextResponse } from "next/server";
-import { getPromoByCode, evaluatePromo } from "../../../../lib/promos";
+import { computePromoDiscount, getPromo, validatePromoForOrder } from "../../../../lib/promos";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const j = (data: any, status = 200) =>
-  NextResponse.json(data, { status });
+const j = (data: any, status = 200) => NextResponse.json(data, { status });
 
-type ReqBody = {
-  code?: string;
-  subtotal?: number;
-};
-
-export async function POST(req: Request) {
+/** GET /api/promos/validate?code=SALE10&orderTotal=4890 */
+export async function GET(req: Request) {
   try {
-    const body = (await req.json()) as ReqBody;
-    const code = String(body.code || "").trim().toUpperCase();
-    const subtotal = Number(body.subtotal ?? 0);
+    const { searchParams } = new URL(req.url);
+    const code = String(searchParams.get("code") || "").toUpperCase().trim();
+    const orderTotal = Number(searchParams.get("orderTotal") || 0);
 
-    if (!code) {
-      return j({ error: "Missing code." }, 400);
-    }
+    if (!code) return j({ valid: false, reason: "NO_CODE" }, 400);
+    if (!Number.isFinite(orderTotal) || orderTotal < 0)
+      return j({ valid: false, reason: "BAD_TOTAL" }, 400);
 
-    const promo = await getPromoByCode(code);
-    if (!promo) {
-      // Not found is a common case—return 404 so UI can show “invalid code”
-      return j({ error: "Promo not found." }, 404);
-    }
+    const promo = await getPromo(code);
+    const check = validatePromoForOrder(promo, orderTotal);
 
-    const result = evaluatePromo(promo, subtotal);
+    if (!check.valid) return j({ valid: false, reason: check.reason });
 
-    return j({
-      valid: result.valid,
-      reason: result.reason,
-      discount: result.discount,
-      freeShipping: result.freeShipping,
-      promo: {
-        code: promo.code,
-        type: promo.type,
-        value: promo.value ?? null,
-        startsAt: promo.startsAt ?? null,
-        endsAt: promo.endsAt ?? null,
-        enabled: promo.enabled,
-      },
-    });
+    const { discount, freeShipping } = computePromoDiscount(promo!, orderTotal);
+    return j({ valid: true, discount, freeShipping, promo: promo });
   } catch (e: any) {
-    return j({ error: e?.message || "Failed to validate promo." }, 500);
+    return j({ error: e?.message || "Validation failed." }, 500);
   }
 }

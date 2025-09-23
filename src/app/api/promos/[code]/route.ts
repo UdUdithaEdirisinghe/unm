@@ -1,37 +1,62 @@
 import { NextResponse } from "next/server";
-import { getPromoByCode, updatePromo, deletePromo, type Promo } from "../../../../lib/promos";
+import { deletePromo, getPromo, upsertPromo, type Promo } from "../../../../lib/promos";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const j = (data: any, status = 200) =>
-  NextResponse.json(data, { status });
+const j = (data: any, status = 200) => NextResponse.json(data, { status });
 
-type Ctx = { params: { code: string } };
-
-export async function PUT(req: Request, ctx: Ctx) {
+/** PUT /api/promos/:code  (update) */
+export async function PUT(
+  req: Request,
+  { params }: { params: { code: string } }
+) {
   try {
-    const code = (ctx.params.code || "").toUpperCase();
+    const code = String(params.code || "").toUpperCase();
+    if (!code) return j({ error: "Code required." }, 400);
+
+    const existing = await getPromo(code);
+    if (!existing) return j({ error: "Not found." }, 404);
+
     const body = (await req.json()) as Partial<Promo>;
+    const type = (body.type ?? existing.type) as Promo["type"];
+    const enabled = body.enabled ?? existing.enabled;
+    const startsAt = body.startsAt ?? existing.startsAt ?? null;
+    const endsAt = body.endsAt ?? existing.endsAt ?? null;
 
-    const exists = await getPromoByCode(code);
-    if (!exists) return j({ error: "Promo not found." }, 404);
+    const value =
+      type === "freeShipping"
+        ? null
+        : body.value !== undefined
+        ? Number(body.value)
+        : existing.value ?? 0;
 
-    const updated = await updatePromo(code, body);
-    if (!updated) return j({ error: "Update failed." }, 500);
-    return j(updated);
+    const saved = await upsertPromo({
+      code,
+      type,
+      value,
+      enabled,
+      startsAt,
+      endsAt,
+    });
+
+    return j(saved);
   } catch (e: any) {
     return j({ error: e?.message || "Failed to update promo." }, 500);
   }
 }
 
-export async function DELETE(_req: Request, ctx: Ctx) {
+/** DELETE /api/promos/:code */
+export async function DELETE(
+  _req: Request,
+  { params }: { params: { code: string } }
+) {
   try {
-    const code = (ctx.params.code || "").toUpperCase();
-    const ok = await deletePromo(code);
-    if (!ok) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    return new NextResponse(null, { status: 204 });
+    const code = String(params.code || "").toUpperCase();
+    if (!code) return j({ error: "Code required." }, 400);
+    await deletePromo(code);
+    return j({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Failed to delete promo." }, { status: 500 });
+    return j({ error: e?.message || "Failed to delete promo." }, 500);
   }
 }

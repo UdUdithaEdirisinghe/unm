@@ -1,49 +1,55 @@
-// src/app/api/store-credits/route.ts
 import { NextResponse } from "next/server";
-import {
-  getStoreCredits,
-  createStoreCredit,
-} from "../../../../lib/storeCredits";
+import { deleteStoreCredit, getStoreCredit, upsertStoreCredit, type StoreCredit } from "../../../../lib/storeCredits";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-/**
- * GET /api/store-credits
- * List all store credits
- */
-export async function GET() {
+const j = (data: any, status = 200) => NextResponse.json(data, { status });
+
+/** PUT /api/store-credits/:code */
+export async function PUT(
+  req: Request,
+  { params }: { params: { code: string } }
+) {
   try {
-    const credits = await getStoreCredits();
-    return NextResponse.json(credits);
+    const code = String(params.code || "").toUpperCase();
+    if (!code) return j({ error: "Code required." }, 400);
+
+    const existing = await getStoreCredit(code);
+    if (!existing) return j({ error: "Not found." }, 404);
+    if (existing.usedAt) return j({ error: "Already used; cannot modify." }, 400);
+
+    const body = (await req.json()) as Partial<StoreCredit>;
+
+    const saved = await upsertStoreCredit({
+      code,
+      amount: body.amount !== undefined ? Number(body.amount) : existing.amount,
+      enabled: body.enabled ?? existing.enabled,
+      minOrderTotal:
+        body.minOrderTotal !== undefined ? Number(body.minOrderTotal) : existing.minOrderTotal ?? null,
+      startsAt: body.startsAt ?? existing.startsAt ?? null,
+      endsAt: body.endsAt ?? existing.endsAt ?? null,
+      usedAt: null,
+      usedOrderId: null,
+    });
+
+    return j(saved);
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Failed to load store credits" }, { status: 500 });
+    return j({ error: e?.message || "Failed to update store credit." }, 500);
   }
 }
 
-/**
- * POST /api/store-credits
- * Create a new store credit
- */
-export async function POST(req: Request) {
+/** DELETE /api/store-credits/:code  (only if unused) */
+export async function DELETE(
+  _req: Request,
+  { params }: { params: { code: string } }
+) {
   try {
-    const body = await req.json();
-
-    if (!body.code || !body.amount) {
-      return NextResponse.json({ error: "Code and amount are required" }, { status: 400 });
-    }
-
-    const credit = await createStoreCredit({
-      code: body.code,
-      amount: Number(body.amount),
-      enabled: body.enabled ?? true,
-      minOrderTotal: body.minOrderTotal ?? null,
-      startsAt: body.startsAt ?? null,
-      endsAt: body.endsAt ?? null,
-    });
-
-    return NextResponse.json(credit, { status: 201 });
+    const code = String(params.code || "").toUpperCase();
+    if (!code) return j({ error: "Code required." }, 400);
+    await deleteStoreCredit(code);
+    return j({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Failed to create store credit" }, { status: 500 });
+    return j({ error: e?.message || "Failed to delete store credit." }, 500);
   }
 }
