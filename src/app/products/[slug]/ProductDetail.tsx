@@ -1,19 +1,43 @@
-// src/app/products/[slug]/ProductDetail.tsx
 "use client";
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useCart } from "../../../components/cart/CartProvider";
 import type { Product } from "../../../lib/products";
 import { formatCurrency } from "../../../lib/format";
 import { toast } from "react-hot-toast";
+import { marked } from "marked";
+import DOMPurify from "dompurify";
 
 export default function ProductDetail({ product }: { product: Product }) {
   const { add } = useCart();
   const [qty, setQty] = useState(1);
 
-  // Normalize image list (keeps your behavior)
+  /* ---------------- Markdown (safe) ---------------- */
+  const [renderedDesc, setRenderedDesc] = useState<string>("");
+
+  useEffect(() => {
+    let alive = true;
+
+    async function render() {
+      const src = product.shortDesc || "";
+
+      // marked can be sync (string) or async (Promise<string>) depending on version/config.
+      const res = (marked as any).parse ? (marked as any).parse(src) : (marked as any)(src);
+      const html: string =
+        typeof (res as any)?.then === "function" ? await (res as Promise<string>) : (res as string);
+
+      if (alive) setRenderedDesc(DOMPurify.sanitize(html));
+    }
+
+    render().catch(() => setRenderedDesc("")); // fail-safe: no crash, just empty
+    return () => {
+      alive = false;
+    };
+  }, [product.shortDesc]);
+
+  /* ---------------- Images ---------------- */
   const imgs = useMemo(() => {
     const arr = (product.images && product.images.length ? product.images : [product.image]).map(
       (s) => (s.startsWith("/") || /^https?:\/\//.test(s) ? s : `/${s}`)
@@ -22,6 +46,7 @@ export default function ProductDetail({ product }: { product: Product }) {
   }, [product.images, product.image]);
   const [index, setIndex] = useState(0);
 
+  /* ---------------- Pricing / stock ---------------- */
   const salePrice = product.salePrice;
   const stock = product.stock ?? 0;
   const outOfStock = stock <= 0;
@@ -31,6 +56,7 @@ export default function ProductDetail({ product }: { product: Product }) {
   const discountPct =
     hasSale && salePrice ? Math.round(((product.price - salePrice) / product.price) * 100) : 0;
 
+  /* ---------------- Cart ---------------- */
   const handleAddToCart = () => {
     add(
       {
@@ -45,6 +71,7 @@ export default function ProductDetail({ product }: { product: Product }) {
     toast.success(`${product.name} added to cart!`);
   };
 
+  /* ---------------- Specs list ---------------- */
   const renderSpecs = () => {
     const s: any = product.specs;
     if (!s) return null;
@@ -66,13 +93,8 @@ export default function ProductDetail({ product }: { product: Product }) {
 
   return (
     <div className="grid gap-8 lg:grid-cols-2 items-start">
-      {/* ========== Gallery (sticky on desktop to remove the big empty area) ========== */}
-      <aside
-        className="
-          relative overflow-hidden rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)]
-          lg:sticky lg:top-24 lg:self-start
-        "
-      >
+      {/* ========== Gallery (sticky on desktop) ========== */}
+      <aside className="relative overflow-hidden rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)] lg:sticky lg:top-24 lg:self-start">
         {/* badges */}
         <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
           {outOfStock && (
@@ -87,7 +109,6 @@ export default function ProductDetail({ product }: { product: Product }) {
           )}
         </div>
 
-        {/* main image (fixed aspect keeps layout stable) */}
         <div className="aspect-[4/3] flex items-center justify-center bg-white">
           <Image
             src={imgs[index]}
@@ -100,15 +121,12 @@ export default function ProductDetail({ product }: { product: Product }) {
           />
         </div>
 
-        {/* Thumbnails */}
         {imgs.length > 1 && (
           <div className="flex gap-2 p-3 overflow-x-auto bg-[rgba(10,15,28,0.5)] border-t border-slate-800/60">
             {imgs.map((src, i) => (
               <button
                 key={i}
-                className={`shrink-0 rounded border ${
-                  i === index ? "border-indigo-500" : "border-slate-700"
-                } bg-slate-900`}
+                className={`shrink-0 rounded border ${i === index ? "border-indigo-500" : "border-slate-700"} bg-slate-900`}
                 onClick={() => setIndex(i)}
                 aria-label={`Image ${i + 1}`}
               >
@@ -120,7 +138,7 @@ export default function ProductDetail({ product }: { product: Product }) {
         )}
       </aside>
 
-      {/* ========== Info column (scrolls normally) ========== */}
+      {/* ========== Info column ========== */}
       <section>
         <h1 className="mb-1 text-3xl font-bold text-white">{product.name}</h1>
 
@@ -140,22 +158,17 @@ export default function ProductDetail({ product }: { product: Product }) {
               {hasSale ? formatCurrency(product.price) : ""}
             </span>
           </div>
-          {hasSale && (
-            <div className="sm:hidden text-slate-400 line-through">
-              {formatCurrency(product.price)}
-            </div>
-          )}
+          {hasSale && <div className="sm:hidden text-slate-400 line-through">{formatCurrency(product.price)}</div>}
         </div>
 
-        {/* Overview (Short Description) */}
-        {product.shortDesc && (
+        {/* Overview (Markdown) */}
+        {renderedDesc && (
           <>
             <h3 className="mb-2 font-semibold text-white">Overview</h3>
-            <p className="mb-6 whitespace-pre-line text-slate-300">{product.shortDesc}</p>
+            <div className="mb-6 prose prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: renderedDesc }} />
           </>
         )}
 
-        {/* Specifications */}
         <h3 className="mb-2 font-semibold text-white">Specifications</h3>
         <ul className="mb-6 list-disc pl-5 text-slate-300">{renderSpecs()}</ul>
 
