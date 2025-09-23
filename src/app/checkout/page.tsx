@@ -29,7 +29,7 @@ export default function CheckoutPage() {
     payment: "COD" as Pay,
   });
 
-  // Optional shipping (different address)
+  // Optional shipping
   const [shipDifferent, setShipDifferent] = useState(false);
   const [ship, setShip] = useState({
     firstName: "",
@@ -40,13 +40,13 @@ export default function CheckoutPage() {
     postal: "",
   });
 
-  // Bank slip (for BANK)
+  // Bank slip
   const [slipFile, setSlipFile] = useState<File | null>(null);
 
   // Terms
   const [agree, setAgree] = useState(false);
 
-  // Promo (works for promo & store-credit)
+  // Promo / store credit
   const [codeInput, setCodeInput] = useState("");
   const [applied, setApplied] = useState<PromoResult | null>(null);
   const [checking, setChecking] = useState(false);
@@ -55,7 +55,7 @@ export default function CheckoutPage() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Shortages from server
+  // Shortages
   const [shortages, setShortages] = useState<Shortage[] | null>(null);
 
   // Totals
@@ -72,32 +72,45 @@ export default function CheckoutPage() {
       setShip((s) => ({ ...s, [k]: e.target.value }));
   }
 
+  // 🔹 FIX: check promos first, then store credits
   async function applyCode() {
     const trimmed = codeInput.trim().toUpperCase();
     if (!trimmed) return;
     setChecking(true);
     setErr(null);
-    try {
-      const r = await fetch("/api/promos/validate", {
+
+    async function tryEndpoint(url: string) {
+      const r = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: trimmed, subtotal }),
       });
-      const data = await r.json();
-      if (!r.ok || !data?.valid) {
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || !data?.valid) return null;
+      return {
+        code: data.code || trimmed,
+        freeShipping: !!data.freeShipping,
+        discount: Number(data.discount || 0),
+      } as PromoResult;
+    }
+
+    try {
+      let result = await tryEndpoint("/api/promos/validate");
+      if (!result) result = await tryEndpoint("/api/store-credits/validate");
+
+      if (!result) {
         setApplied(null);
-        setErr(data?.message || "That code isn’t valid or has expired.");
+        setErr("That code isn’t valid or has expired.");
       } else {
-        setApplied({
-          code: data.promo?.code || trimmed,
-          freeShipping: !!data.freeShipping,
-          discount: Number(data.discount || 0),
-        });
+        setApplied(result);
       }
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to validate code.");
     } finally {
       setChecking(false);
     }
   }
+
   function removeCode() {
     setApplied(null);
     setCodeInput("");
@@ -141,9 +154,7 @@ export default function CheckoutPage() {
         !ship.city.trim() ||
         !rePhone10.test(ship.phone)
       ) {
-        return setErr(
-          "For shipping to a different address, please enter recipient name, address, town/city and a valid 10-digit phone."
-        );
+        return setErr("For shipping to a different address, please enter recipient name, address, town/city and a valid 10-digit phone.");
       }
       shippingAddress = ship;
     }
@@ -162,7 +173,7 @@ export default function CheckoutPage() {
         body: JSON.stringify({
           items,
           paymentMethod: bill.payment,
-          promoCode: applied?.code, // one box for promo or store-credit
+          promoCode: applied?.code,
           bankSlipUrl,
           shipping,
           customer: bill,
@@ -175,10 +186,7 @@ export default function CheckoutPage() {
         const data = await r.json().catch(() => ({}));
         const arr = Array.isArray(data?.shortages) ? data.shortages : [];
         if (arr.length) setShortages(arr as Shortage[]);
-        setErr(
-          data?.error ||
-            "Some items are not available in the requested quantity. Please adjust your cart."
-        );
+        setErr(data?.error || "Some items are not available in the requested quantity. Please adjust your cart.");
         return;
       }
 
@@ -225,9 +233,8 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Desktop: 2+1 grid so summary never collapses under shipping section */}
       <form onSubmit={place} className="grid grid-cols-1 gap-6 md:grid-cols-3">
-        {/* LEFT (md: span 2) */}
+        {/* LEFT */}
         <div className="md:col-span-2 space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <input className="field" placeholder="First name" value={bill.firstName} onChange={updBill("firstName")} required />
@@ -248,7 +255,7 @@ export default function CheckoutPage() {
 
           <textarea className="textarea" placeholder="Order notes (optional)" value={bill.notes} onChange={updBill("notes")} />
 
-          {/* Ship to different */}
+          {/* Ship different */}
           <div className="panel p-4 space-y-3">
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={shipDifferent} onChange={(e) => setShipDifferent(e.target.checked)} />
@@ -272,7 +279,7 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* RIGHT (sticky summary) */}
+        {/* RIGHT */}
         <div className="md:col-span-1 md:sticky md:top-24 self-start">
           <div className="panel p-4 space-y-4">
             <h2 className="text-lg font-semibold">Your order</h2>
@@ -286,7 +293,7 @@ export default function CheckoutPage() {
               ))}
             </div>
 
-            {/* One input for promo or store credit */}
+            {/* Promo / Store credit */}
             <div className="mt-2">
               {applied ? (
                 <div className="flex justify-between rounded-lg border border-emerald-700/40 bg-emerald-900/20 px-3 py-2 text-emerald-200">
@@ -301,12 +308,7 @@ export default function CheckoutPage() {
                     value={codeInput}
                     onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
                   />
-                  <button
-                    type="button"
-                    className="btn-secondary"
-                    onClick={applyCode}
-                    disabled={checking}
-                  >
+                  <button type="button" className="btn-secondary" onClick={applyCode} disabled={checking}>
                     {checking ? "Checking…" : "Apply"}
                   </button>
                 </div>
