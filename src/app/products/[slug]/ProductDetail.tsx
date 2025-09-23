@@ -1,8 +1,9 @@
+// src/app/products/[slug]/ProductDetail.tsx
 "use client";
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useCart } from "../../../components/cart/CartProvider";
 import type { Product } from "../../../lib/products";
 import { formatCurrency } from "../../../lib/format";
@@ -12,26 +13,23 @@ export default function ProductDetail({ product }: { product: Product }) {
   const { add } = useCart();
   const [qty, setQty] = useState(1);
 
+  // Normalize image list (keeps your behavior)
   const imgs = useMemo(() => {
     const arr = (product.images && product.images.length ? product.images : [product.image]).map(
       (s) => (s.startsWith("/") || /^https?:\/\//.test(s) ? s : `/${s}`)
     );
     return arr.length ? arr : ["/placeholder.png"];
   }, [product.images, product.image]);
-
   const [index, setIndex] = useState(0);
 
   const salePrice = product.salePrice;
   const stock = product.stock ?? 0;
   const outOfStock = stock <= 0;
-  const hasSale =
-    typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
+  const hasSale = typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
 
   const priceToUse = hasSale ? (salePrice as number) : product.price;
   const discountPct =
-    hasSale && salePrice
-      ? Math.round(((product.price - salePrice) / product.price) * 100)
-      : 0;
+    hasSale && salePrice ? Math.round(((product.price - salePrice) / product.price) * 100) : 0;
 
   const handleAddToCart = () => {
     add(
@@ -67,9 +65,15 @@ export default function ProductDetail({ product }: { product: Product }) {
   };
 
   return (
-    <div className="grid gap-10 lg:grid-cols-2">
-      {/* Gallery */}
-      <div className="relative rounded-lg overflow-hidden border border-slate-800/60 bg-[rgba(10,15,28,0.4)]">
+    <div className="grid gap-8 lg:grid-cols-2 items-start">
+      {/* ========== Gallery (sticky on desktop to remove the big empty area) ========== */}
+      <aside
+        className="
+          relative overflow-hidden rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)]
+          lg:sticky lg:top-24 lg:self-start
+        "
+      >
+        {/* badges */}
         <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
           {outOfStock && (
             <span className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white shadow">
@@ -83,6 +87,7 @@ export default function ProductDetail({ product }: { product: Product }) {
           )}
         </div>
 
+        {/* main image (fixed aspect keeps layout stable) */}
         <div className="aspect-[4/3] flex items-center justify-center bg-white">
           <Image
             src={imgs[index]}
@@ -113,11 +118,12 @@ export default function ProductDetail({ product }: { product: Product }) {
             ))}
           </div>
         )}
-      </div>
+      </aside>
 
-      {/* Info */}
-      <div>
-        <h1 className="text-3xl font-bold mb-1 text-white">{product.name}</h1>
+      {/* ========== Info column (scrolls normally) ========== */}
+      <section>
+        <h1 className="mb-1 text-3xl font-bold text-white">{product.name}</h1>
+
         <div className="mb-3 flex flex-wrap items-center gap-2">
           {product.brand && <p className="text-slate-300">{product.brand}</p>}
           {product.category && (
@@ -143,15 +149,15 @@ export default function ProductDetail({ product }: { product: Product }) {
 
         {/* Overview (Short Description) */}
         {product.shortDesc && (
-            <div className="mb-6 max-w-prose leading-relaxed text-slate-300">
-            <h3 className="font-semibold text-white mb-2">Overview</h3>
-            <p className="whitespace-pre-line">{product.shortDesc}</p>
-          </div>
+          <>
+            <h3 className="mb-2 font-semibold text-white">Overview</h3>
+            <p className="mb-6 whitespace-pre-line text-slate-300">{product.shortDesc}</p>
+          </>
         )}
 
         {/* Specifications */}
-        <h3 className="font-semibold text-white mb-2">Specifications</h3>
-        <ul className="list-disc pl-5 text-slate-300 mb-6">{renderSpecs()}</ul>
+        <h3 className="mb-2 font-semibold text-white">Specifications</h3>
+        <ul className="mb-6 list-disc pl-5 text-slate-300">{renderSpecs()}</ul>
 
         <div className="flex items-center gap-3">
           <div className="inline-flex items-center rounded-md border border-slate-700 bg-slate-800">
@@ -159,6 +165,7 @@ export default function ProductDetail({ product }: { product: Product }) {
               type="button"
               className="h-9 w-9 border-r border-slate-700 text-white"
               onClick={() => setQty((n) => Math.max(1, n - 1))}
+              aria-label="Decrease quantity"
             >
               −
             </button>
@@ -167,6 +174,7 @@ export default function ProductDetail({ product }: { product: Product }) {
               type="button"
               className="h-9 w-9 border-l border-slate-700 text-white"
               onClick={() => setQty((n) => n + 1)}
+              aria-label="Increase quantity"
             >
               +
             </button>
@@ -180,7 +188,7 @@ export default function ProductDetail({ product }: { product: Product }) {
             Back to Products
           </Link>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
