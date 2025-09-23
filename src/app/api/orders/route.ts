@@ -1,14 +1,15 @@
+// Create order / List orders (admin)
 import { NextResponse } from "next/server";
 import sql, { toJson } from "../../../lib/db";
-import { getPromoByCode, isPromoActive, computeDiscount } from "../../../lib/promos";
+import { getPromoByCode, isPromoActive, computePromoDiscount } from "../../../lib/promos";
 import type { Order } from "../../../lib/products";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
-
 type CartLine = { id: string; name: string; slug?: string; price: number; quantity: number };
+
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
 /* ---------- helpers ---------- */
@@ -48,6 +49,7 @@ function rowToOrder(r: any): Order {
     paymentMethod: (r.payment_method as Order["paymentMethod"]) ?? "COD",
     bankSlipName: r.bank_slip_name ?? null,
     bankSlipUrl: r.bank_slip_url ?? null,
+    promoKind: (r.promo_kind as Order["promoKind"]) ?? null, // optional column if you added it
   };
 }
 
@@ -57,7 +59,7 @@ function generateOrderId() {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  const suffix = Math.floor(Math.random() * 10000).toString().padStart(4, "0"); // 0000–9999
+  const suffix = Math.floor(Math.random() * 10000).toString().padStart(4, "0");
   return `MNY-${y}${m}${day}-${suffix}`;
 }
 
@@ -121,16 +123,15 @@ export async function POST(req: Request) {
     let promo_code: string | null = null;
     let promo_discount = 0;
     let free_shipping = false;
-    let usedStoreCredit = false; // mark later if order insert succeeds
     let promoKind: Order["promoKind"] = null;
+    let usedStoreCredit = false;
 
     if (codeRaw) {
-      // try PROMO
+      // try PROMO first
       const promo = await getPromoByCode(codeRaw);
-      const nowPromoOk = promo && isPromoActive(promo);
-      if (nowPromoOk) {
-        const { discount, freeShipping } = computeDiscount(promo!, subtotal);
-        promo_code = promo!.code;
+      if (promo && isPromoActive(promo)) {
+        const { discount, freeShipping } = computePromoDiscount(promo, subtotal);
+        promo_code = promo.code;
         promo_discount = num(discount, 0);
         free_shipping = !!freeShipping;
         promoKind = "promo";
@@ -139,7 +140,7 @@ export async function POST(req: Request) {
         const rows: any[] = await sql`
           SELECT code, amount, enabled, min_order_total, starts_at, ends_at, used_order_id
           FROM store_credits
-          WHERE code = ${codeRaw}
+          WHERE LOWER(code) = LOWER(${codeRaw})
           LIMIT 1
         `;
         const sc = rows[0];
@@ -155,7 +156,7 @@ export async function POST(req: Request) {
           const minOrder = num(sc.min_order_total, 0);
           if (subtotal > 0 && subtotal >= minOrder) {
             const amount = Math.max(0, num(sc.amount));
-            promo_code = sc.code;
+            promo_code = String(sc.code).toUpperCase();
             promo_discount = Math.min(amount, subtotal);
             free_shipping = false;
             usedStoreCredit = true;
@@ -232,12 +233,12 @@ export async function POST(req: Request) {
       await sql`UPDATE products SET stock = stock - ${it.quantity} WHERE id = ${it.id}`;
     }
 
-    // 5) If we used a STORE CREDIT, consume it now (only after order creation)
+    // 5) If we used a STORE CREDIT, mark it used (after order creation)
     if (usedStoreCredit && promo_code) {
       await sql`
         UPDATE store_credits
         SET used_order_id = ${order_id}, used_at = now()
-        WHERE code = ${promo_code} AND used_order_id IS NULL
+        WHERE LOWER(code) = LOWER(${promo_code}) AND used_order_id IS NULL
       `;
     }
 
@@ -252,7 +253,7 @@ export async function POST(req: Request) {
         promoDiscount: row.promo_discount == null ? null : num(row.promo_discount),
         freeShipping: !!row.free_shipping,
         total: num(row.total),
-        promoKind, // NEW
+        promoKind,
       },
       201
     );

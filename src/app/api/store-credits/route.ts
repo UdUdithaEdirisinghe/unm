@@ -1,48 +1,52 @@
+// List & create/update store credits
 import { NextResponse } from "next/server";
-import { getStoreCredits, upsertStoreCredit, type StoreCredit } from "../../../lib/storeCredits";
+import {
+  getStoreCredits,
+  upsertStoreCredit,
+  type StoreCredit,
+} from "../../../lib/storeCredits";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const j = (data: any, status = 200) => NextResponse.json(data, { status });
+const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
-/** GET /api/store-credits */
+/** GET /api/store-credits -> StoreCredit[] */
 export async function GET() {
   try {
-    const items = await getStoreCredits();
-    return j(items);
+    const rows = await getStoreCredits();
+    return j(rows);
   } catch (e: any) {
     return j({ error: e?.message || "Failed to load store credits." }, 500);
   }
 }
 
-/** POST /api/store-credits (create) */
+/** POST /api/store-credits -> create or overwrite */
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as Partial<StoreCredit>;
+    const body = (await req.json().catch(() => ({}))) as Partial<StoreCredit>;
+    const code = String(body.code || "").trim().toUpperCase();
+    const amount = Number(body.amount ?? 0);
+    const enabled = Boolean(body.enabled);
+    const minOrderTotal =
+      body.minOrderTotal == null ? null : Number(body.minOrderTotal);
+    const startsAt = body.startsAt ?? null;
+    const endsAt = body.endsAt ?? null;
 
-    const code = String(body.code || "").toUpperCase().trim();
-    if (!code) return j({ error: "Code required." }, 400);
-
-    const amount = Number(body.amount);
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return j({ error: "Amount must be a positive number." }, 400);
+    if (!code || !Number.isFinite(amount) || amount <= 0) {
+      return j({ error: "Missing/invalid fields: code, amount." }, 400);
     }
 
     const saved = await upsertStoreCredit({
       code,
       amount,
-      enabled: Boolean(body.enabled),
-      minOrderTotal:
-        body.minOrderTotal !== undefined && body.minOrderTotal !== null
-          ? Number(body.minOrderTotal)
-          : null,
-      startsAt: body.startsAt ?? null,
-      endsAt: body.endsAt ?? null,
+      enabled,
+      minOrderTotal,
+      startsAt,
+      endsAt,
       usedAt: null,
       usedOrderId: null,
     });
-
     return j(saved, 201);
   } catch (e: any) {
     return j({ error: e?.message || "Failed to save store credit." }, 500);

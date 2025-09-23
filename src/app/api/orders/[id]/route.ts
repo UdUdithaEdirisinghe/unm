@@ -1,3 +1,4 @@
+// Read & update order (status only)
 import { NextResponse } from "next/server";
 import sql from "../../../../lib/db";
 import type { Order } from "../../../../lib/products";
@@ -44,7 +45,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     let promoKind: Order["promoKind"] = null;
     if (base.promoCode) {
       const scRows: any[] = await sql`
-        SELECT 1 FROM store_credits WHERE code = ${base.promoCode} LIMIT 1
+        SELECT 1 FROM store_credits WHERE LOWER(code) = LOWER(${base.promoCode}) LIMIT 1
       `;
       promoKind = scRows[0] ? "store_credit" : "promo";
     }
@@ -68,11 +69,12 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     `;
     if (!rows[0]) return j({ error: "Not found" }, 404);
 
-    // Return updated order with promoKind
     const base = baseRowToOrder(rows[0]);
     let promoKind: Order["promoKind"] = null;
     if (base.promoCode) {
-      const scRows: any[] = await sql`SELECT 1 FROM store_credits WHERE code=${base.promoCode} LIMIT 1`;
+      const scRows: any[] = await sql`
+        SELECT 1 FROM store_credits WHERE LOWER(code) = LOWER(${base.promoCode}) LIMIT 1
+      `;
       promoKind = scRows[0] ? "store_credit" : "promo";
     }
     return j({ ...base, promoKind } as Order);
