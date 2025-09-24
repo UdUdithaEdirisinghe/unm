@@ -4,17 +4,13 @@ import nodemailer, { SendMailOptions } from "nodemailer";
 const {
   SMTP_HOST,          // e.g. smtp.zoho.com
   SMTP_PORT,          // "587" (STARTTLS) or "465" (SSL)
-  SMTP_USER,          // e.g. support@manny.lk  (must be a real Zoho mailbox or approved alias)
-  SMTP_PASS,          // Zoho "App Password" (NOT your login password)
-  MAIL_FROM,          // e.g. 'Manny.lk <support@manny.lk>' (should match SMTP_USER address)
+  SMTP_USER,          // MUST be a real Zoho mailbox (e.g. support@manny.lk)
+  SMTP_PASS,          // Zoho App Password
   MAIL_TO_ORDERS,     // e.g. orders@manny.lk
-  NODE_ENV,
 } = process.env;
 
-/* ----------------- types & helpers ----------------- */
-
-type Line = { name: string; quantity: number; price: number; slug?: string };
-
+/* ----------------- types ----------------- */
+export type Line = { name: string; quantity: number; price: number; slug?: string };
 export type OrderEmail = {
   id: string;
   createdAt: string;
@@ -33,6 +29,7 @@ export type OrderEmail = {
   bankSlipUrl?: string | null;
 };
 
+/* ----------------- helpers ----------------- */
 const money = (v: number) =>
   new Intl.NumberFormat("en-LK", { style: "currency", currency: "LKR", maximumFractionDigits: 0 }).format(v);
 
@@ -104,76 +101,64 @@ function renderAdminEmail(o: OrderEmail) {
   </div>`;
 }
 
-/* ----------------- transport (with verify + fallback) ----------------- */
-
+/* ----------------- transport (verify + fallback) ----------------- */
 let cached: nodemailer.Transporter | null = null;
 
 async function makeTransport(host: string, port: number, secure: boolean) {
   const t = nodemailer.createTransport({
     host,
     port,
-    secure, // false for 587 (STARTTLS), true for 465 (SSL)
+    secure,                 // false for 587 (STARTTLS), true for 465 (SSL)
     auth: { user: SMTP_USER, pass: SMTP_PASS },
     authMethod: "LOGIN",
     requireTLS: !secure,
-    logger: true, // visible in Vercel logs
+    logger: true,           // shows in Vercel logs
     debug: true,
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
     socketTimeout: 20_000,
     tls: secure ? undefined : { rejectUnauthorized: true },
   });
-  await t.verify(); // surface auth/config errors in logs
+  await t.verify(); // fail early if creds/from are wrong
   return t;
 }
 
 async function getTransporter(): Promise<nodemailer.Transporter> {
   if (cached) return cached;
   const host = SMTP_HOST || "smtp.zoho.com";
-  const wantPort = Number(SMTP_PORT || 587);
-  const wantSecure = wantPort === 465;
+  const p = Number(SMTP_PORT || 587);
+  const secure = p === 465;
 
   try {
-    console.log(`[mail] trying SMTP ${host}:${wantPort} secure=${wantSecure}`);
-    cached = await makeTransport(host, wantPort, wantSecure);
+    console.log(`[mail] trying SMTP ${host}:${p} secure=${secure}`);
+    cached = await makeTransport(host, p, secure);
     console.log("[mail] SMTP verify OK on desired port");
-    return cached;
+    return cached!;
   } catch (e1: any) {
     console.error("[mail] primary SMTP failed:", e1?.message || e1);
-    const altPort = wantPort === 465 ? 587 : 465;
+    const altPort = p === 465 ? 587 : 465;
     const altSecure = altPort === 465;
-    try {
-      console.log(`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`);
-      cached = await makeTransport(host, altPort, altSecure);
-      console.log("[mail] SMTP verify OK on fallback port");
-      return cached;
-    } catch (e2: any) {
-      console.error("[mail] fallback SMTP failed:", e2?.message || e2);
-      throw e2;
-    }
+    console.log(`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`);
+    cached = await makeTransport(host, altPort, altSecure);
+    console.log("[mail] SMTP verify OK on fallback port");
+    return cached!;
   }
 }
 
 async function reallySend(opts: SendMailOptions) {
   const t = await getTransporter();
-  const info = await t.sendMail(opts);
-  console.log("[mail] sent:", { messageId: info.messageId, response: info.response, to: opts.to, subject: opts.subject });
+  // Force From to match SMTP_USER (Zoho requirement)
+  const from = `Manny.lk <${SMTP_USER}>`;
+  const info = await t.sendMail({ ...opts, from });
+  console.log("[mail] sent:", { to: opts.to, subject: opts.subject, messageId: info.messageId, response: info.response });
   return info;
 }
 
 /* ----------------- public API ----------------- */
-
 export async function sendOrderEmails(order: OrderEmail) {
-  // Force From to match the authenticated mailbox (Zoho requirement)
-  const fromBrand = `Manny.lk <${SMTP_USER}>`;
-  const fromHeader = MAIL_FROM && MAIL_FROM.toLowerCase().includes(String(SMTP_USER).toLowerCase())
-    ? MAIL_FROM
-    : fromBrand;
-
-  // customer email (ignore failure)
+  // customer (ignore failure)
   try {
     await reallySend({
-      from: fromHeader,
       to: order.customer.email,
       subject: `Order Confirmation — ${order.id}`,
       html: renderCustomerEmail(order),
@@ -182,10 +167,9 @@ export async function sendOrderEmails(order: OrderEmail) {
     console.error("[mail] customer email failed:", err?.message || err);
   }
 
-  // admin email (ignore failure)
+  // admin (ignore failure)
   try {
     await reallySend({
-      from: fromHeader,
       to: MAIL_TO_ORDERS || SMTP_USER,
       subject: `New Order — ${order.id} — ${order.customer.firstName} ${order.customer.lastName}`,
       html: renderAdminEmail(order),
