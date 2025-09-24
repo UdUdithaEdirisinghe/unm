@@ -98,11 +98,7 @@ function renderCustomerEmail(o: OrderEmail) {
           ${o.customer.shipToDifferent.address}, ${o.customer.shipToDifferent.city}${
         o.customer.shipToDifferent.postal ? " " + o.customer.shipToDifferent.postal : ""
       }<br/>
-          ${
-            o.customer.shipToDifferent.phone
-              ? `Phone: ${o.customer.shipToDifferent.phone}`
-              : ""
-          }
+          ${o.customer.shipToDifferent.phone ? `Phone: ${o.customer.shipToDifferent.phone}` : ""}
         </div>
       </div>`
     : "";
@@ -143,13 +139,7 @@ function renderCustomerEmail(o: OrderEmail) {
 
         <div style="margin-top:12px;text-align:right;color:#334155">
           <div>Subtotal: <b>${money(o.subtotal)}</b></div>
-          ${
-            o.promoDiscount
-              ? `<div>Discount ${
-                  o.promoCode ? `(${o.promoCode})` : ""
-                }: <b>-${money(o.promoDiscount)}</b></div>`
-              : ""
-          }
+          ${o.promoDiscount ? `<div>Discount ${o.promoCode ? `(${o.promoCode})` : ""}: <b>-${money(o.promoDiscount)}</b></div>` : ""}
           <div>Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b></div>
           <div style="margin-top:8px;font-size:16px">Grand Total: <b>${money(o.total)}</b></div>
         </div>
@@ -159,17 +149,11 @@ function renderCustomerEmail(o: OrderEmail) {
         <div style="font-weight:600;margin-bottom:6px">Billing</div>
         <div style="color:#334155;line-height:1.6">
           ${o.customer.firstName} ${o.customer.lastName}<br/>
-          ${o.customer.address}, ${o.customer.city}${
-    o.customer.postal ? " " + o.customer.postal : ""
-  }<br/>
-          ${o.customer.phone ? `Phone: ${o.customer.phone}<br/>` : ""}Email: ${
-    o.customer.email
-  }
+          ${o.customer.address}, ${o.customer.city}${o.customer.postal ? " " + o.customer.postal : ""}<br/>
+          ${o.customer.phone ? `Phone: ${o.customer.phone}<br/>` : ""}Email: ${o.customer.email}
         </div>
         <div style="margin-top:10px;color:#334155">
-          <b>Payment:</b> ${
-            o.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"
-          }${o.bankSlipUrl ? ` — <a href="${o.bankSlipUrl}">Bank slip</a>` : ""}
+          <b>Payment:</b> ${o.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}${o.bankSlipUrl ? ` — <a href="${o.bankSlipUrl}">Bank slip</a>` : ""}
         </div>
       </div>
 
@@ -179,33 +163,25 @@ function renderCustomerEmail(o: OrderEmail) {
       <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc">
         <div style="font-weight:600;margin-bottom:6px">Need help?</div>
         <div style="color:#334155;line-height:1.6">
-          If you have any questions,
-          ${
-            waHref
-              ? `chat with us on <a href="${waHref}">WhatsApp</a>`
-              : "chat with us on WhatsApp"
-          }
-          or email <a href="mailto:${contactEmail}">${contactEmail}</a>.
+          If you have any questions, ${waHref ? `chat with us on <a href="${waHref}">WhatsApp</a>` : "chat with us on WhatsApp"} or email <a href="mailto:${contactEmail}">${contactEmail}</a>.
         </div>
       </div>
 
       <div style="text-align:center;color:#94a3b8;margin-top:16px;font-size:12px">
-        © ${new Date().getFullYear()} ${brand}. All rights reserved.
+        ©️ ${new Date().getFullYear()} ${brand}. All rights reserved.
       </div>
 
     </div>
   </div>`;
 }
 
-/* ----------------- admin email (now shows Shipping + Notes too) ----------------- */
+/* ----------------- admin email ----------------- */
 
 function renderAdminEmail(o: OrderEmail) {
   const shippingLine = o.customer.shipToDifferent
     ? `<div><b>Ship to:</b> ${[
         o.customer.shipToDifferent.name,
-        `${o.customer.shipToDifferent.address}, ${o.customer.shipToDifferent.city}${
-          o.customer.shipToDifferent.postal ? " " + o.customer.shipToDifferent.postal : ""
-        }`,
+        `${o.customer.shipToDifferent.address}, ${o.customer.shipToDifferent.city}${o.customer.shipToDifferent.postal ? " " + o.customer.shipToDifferent.postal : ""}`,
         o.customer.shipToDifferent.phone ? `Phone: ${o.customer.shipToDifferent.phone}` : "",
       ]
         .filter(Boolean)
@@ -221,9 +197,7 @@ function renderAdminEmail(o: OrderEmail) {
     <h2 style="margin:0 0 8px">New order received: ${o.id}</h2>
     <div>Time: ${fmtDate(o.createdAt)}</div>
     <div>Payment: ${o.paymentMethod}${o.bankSlipUrl ? ` — Slip: ${o.bankSlipUrl}` : ""}</div>
-    <div>Customer: ${o.customer.firstName} ${o.customer.lastName} — ${o.customer.email}${
-    o.customer.phone ? " / " + o.customer.phone : ""
-  }</div>
+    <div>Customer: ${o.customer.firstName} ${o.customer.lastName} — ${o.customer.email}${o.customer.phone ? " / " + o.customer.phone : ""}</div>
     ${shippingLine}
     ${notesLine}
     <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0">
@@ -237,11 +211,7 @@ function renderAdminEmail(o: OrderEmail) {
       </thead>
       <tbody>${itemsTable(o.items)}</tbody>
     </table>
-    <div>Subtotal: <b>${money(o.subtotal)}</b> ${
-    o.promoDiscount ? `| Discount: -${money(o.promoDiscount)} (${o.promoCode ?? "code"})` : ""
-  } | Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b> | Grand: <b>${money(
-    o.total
-  )}</b></div>
+    <div>Subtotal: <b>${money(o.subtotal)}</b> ${o.promoDiscount ? `| Discount: -${money(o.promoDiscount)} (${o.promoCode ?? "code"})` : ""} | Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b> | Grand: <b>${money(o.total)}</b></div>
   </div>`;
 }
 
@@ -253,7 +223,7 @@ async function makeTransport(host: string, port: number, secure: boolean) {
   const t = nodemailer.createTransport({
     host,
     port,
-    secure, // false for 587, true for 465
+    secure,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
     authMethod: "LOGIN",
     requireTLS: !secure,
@@ -307,7 +277,7 @@ async function reallySend(opts: SendMailOptions) {
 export async function sendOrderEmails(order: OrderEmail) {
   const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
   const fromHeader =
-    MAIL_FROM && String(MAIL_FROM).toLowerCase().includes(String(SMTP_USER).toLowerCase())
+    MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
       ? MAIL_FROM
       : fallbackFrom;
 
@@ -345,7 +315,7 @@ function escapeHtml(s: string) {
     .replace(/'/g, "&#039;");
 }
 
-// --- add this at the bottom of src/lib/mail.ts ---
+/* ----------------- contact email ----------------- */
 
 type ContactPayload = {
   name: string;
@@ -356,16 +326,12 @@ type ContactPayload = {
 };
 
 export async function sendContactEmail(payload: ContactPayload) {
-  const {
-    SMTP_USER,
-    MAIL_FROM,
-    MAIL_TO_CONTACT = "info@manny.lk",
-  } = process.env as Record<string, string | undefined>;
-
-  // Force the From to be the authenticated mailbox (Zoho requirement)
-  const fromHeader = MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
-    ? MAIL_FROM
-    : `Manny.lk <${SMTP_USER}>`;
+  const to = MAIL_TO_CONTACT || "info@manny.lk";
+  const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
+  const fromHeader =
+    MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
+      ? MAIL_FROM
+      : fallbackFrom;
 
   const html = `
     <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
@@ -381,15 +347,15 @@ export async function sendContactEmail(payload: ContactPayload) {
   `;
 
   try {
-    const t = await getTransporter(); // uses your existing verified transporter
+    const t = await getTransporter();
     await t.sendMail({
       from: fromHeader,
-      to: MAIL_TO_CONTACT,
-      replyTo: payload.email,        // you can reply straight to the customer
-      subject: `New inquiry from ${payload.name || "Customer"}`,
+      to,
+      replyTo: payload.email,
+      subject: `[Contact] ${payload.subject || "Message"} — ${payload.name || "Customer"}`,
       html,
     });
-    console.log("[contact] sent to", MAIL_TO_CONTACT);
+    console.log("[contact] sent to", to);
   } catch (err: any) {
     console.error("[contact] send failed:", err?.message || err);
     throw err;

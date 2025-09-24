@@ -1,3 +1,4 @@
+// src/app/api/contact/route.ts
 import { NextResponse } from "next/server";
 import { sendContactEmail } from "../../../lib/mail";
 
@@ -8,27 +9,27 @@ const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
+    const body = await req.json();
+    const { name = "", email = "", subject = "", message = "", company = "" } = body || {};
 
-    // simple honeypot (blocks most bots)
-    if (typeof body.website === "string" && body.website.trim() !== "") {
-      return j({ ok: true }); // pretend success
+    // Basic validation
+    const okEmail = typeof email === "string" && /\S+@\S+\.\S+/.test(email);
+    if (!name || !okEmail || !subject || !message) {
+      return j({ error: "Please fill all required fields." }, 400);
     }
+    // Honeypot check
+    if (company) return j({ ok: true }); // silently ignore bots
 
-    const name = String(body.name || "").trim();
-    const email = String(body.email || "").trim();
-    const phone = body.phone ? String(body.phone).trim() : "";
-    const subject = body.subject ? String(body.subject).trim() : "";
-    const message = String(body.message || "").trim();
+    await sendContactEmail({
+      name: String(name),
+      email: String(email),
+      subject: String(subject),
+      message: String(message),
+    });
 
-    if (!name || !email || !message) {
-      return j({ error: "Missing required fields." }, 400);
-    }
-
-    await sendContactEmail({ name, email, phone, subject, message });
     return j({ ok: true });
   } catch (e: any) {
-    console.error("[api/contact] error:", e?.message || e);
-    return j({ error: "Failed to send your message." }, 500);
+    console.error("contact route error:", e);
+    return j({ error: "Failed to send message." }, 500);
   }
 }
