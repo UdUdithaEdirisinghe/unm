@@ -28,7 +28,7 @@ export default function ContactForm() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Failed to send your message.");
-      toast.success("Thanks! We’ll get back to you within 24 hours.");
+      toast.success("Thanks for reaching out! One of our team members will get back to you shortly.");
       setForm({ name: "", email: "", message: "" });
     } catch (err: any) {
       toast.error(err?.message ?? "Could not send your message.");

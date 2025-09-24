@@ -44,7 +44,7 @@ export default function ContactPage() {
           <div className="panel p-5 h-full">
             <h2 className="text-slate-200 font-medium">Write to Us</h2>
             <p className="mt-2 text-slate-400">
-              Prefer email? We’ll reply within 24 hours.
+              Fill out our form and we will contact you within 24 hours.
             </p>
             <div className="mt-3">
               {/* no underline, brand color handled by your theme */}
