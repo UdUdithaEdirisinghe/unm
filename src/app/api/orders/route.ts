@@ -1,4 +1,4 @@
-// src/app/api/orders/route.ts
+// Create order / List orders (admin)
 import { NextResponse } from "next/server";
 import sql, { toJson } from "../../../lib/db";
 import { getPromoByCode, isPromoActive, computePromoDiscount } from "../../../lib/promos";
@@ -50,7 +50,7 @@ function rowToOrder(r: any): Order {
     paymentMethod: (r.payment_method as Order["paymentMethod"]) ?? "COD",
     bankSlipName: r.bank_slip_name ?? null,
     bankSlipUrl: r.bank_slip_url ?? null,
-    promoKind: (r.promo_kind as Order["promoKind"]) ?? null,
+    promoKind: (r.promo_kind as Order["promoKind"]) ?? null, // optional column if you added it
   };
 }
 
@@ -80,8 +80,10 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+
     const items = parseItems(body.items);
     if (items.length === 0) return j({ error: "Empty cart." }, 400);
+
     console.log("[orders] incoming order request:", {
       items: items.length,
       hasPromoCode: !!body.promoCode,
@@ -93,7 +95,6 @@ export async function POST(req: Request) {
     const productRows: any[] = ids.length
       ? await sql`SELECT id, stock, name FROM products WHERE id = ANY(${ids})`
       : [];
-    console.log("[orders] loaded product stocks:", productRows.length);
 
     const stock = new Map<string, number>();
     const names = new Map<string, string>();
@@ -101,6 +102,8 @@ export async function POST(req: Request) {
       stock.set(String(r.id), num(r.stock));
       names.set(String(r.id), String(r.name));
     }
+
+    console.log("[orders] loaded product stocks:", productRows.length);
 
     const shortages: { id: string; name: string; requested: number; available: number }[] = [];
     for (const it of items) {
@@ -115,7 +118,6 @@ export async function POST(req: Request) {
       }
     }
     if (shortages.length) {
-      console.warn("[orders] shortages found:", shortages);
       return j(
         { error: "Some items are not available in the requested quantity.", shortages },
         409
@@ -135,7 +137,7 @@ export async function POST(req: Request) {
     let usedStoreCredit = false;
 
     if (codeRaw) {
-      console.log("[orders] validating code:", codeRaw);
+      // try PROMO first
       const promo = await getPromoByCode(codeRaw);
       if (promo && isPromoActive(promo)) {
         const { discount, freeShipping } = computePromoDiscount(promo, subtotal);
@@ -143,8 +145,8 @@ export async function POST(req: Request) {
         promo_discount = num(discount, 0);
         free_shipping = !!freeShipping;
         promoKind = "promo";
-        console.log("[orders] promo applied:", { promo_code, promo_discount, free_shipping });
       } else {
+        // try STORE CREDIT
         const rows: any[] = await sql`
           SELECT code, amount, enabled, min_order_total, starts_at, ends_at, used_order_id
           FROM store_credits
@@ -169,12 +171,7 @@ export async function POST(req: Request) {
             free_shipping = false;
             usedStoreCredit = true;
             promoKind = "store_credit";
-            console.log("[orders] store credit applied:", { promo_code, promo_discount });
-          } else {
-            console.log("[orders] store credit rejected: below min order total");
           }
-        } else {
-          console.log("[orders] code not active or not found in store_credits");
         }
       }
     }
@@ -213,6 +210,7 @@ export async function POST(req: Request) {
     const bank_slip_url = body.bankSlipUrl ?? null;
 
     const order_id = generateOrderId();
+
     console.log("[orders] creating order:", {
       order_id,
       subtotal,
@@ -259,23 +257,25 @@ export async function POST(req: Request) {
     }
     console.log("[orders] stock decremented for", items.length, "items");
 
+    // 5) If we used a STORE CREDIT, mark it used (after order creation)
     if (usedStoreCredit && promo_code) {
       await sql`
         UPDATE store_credits
         SET used_order_id = ${order_id}, used_at = now()
         WHERE LOWER(code) = LOWER(${promo_code}) AND used_order_id IS NULL
       `;
-      console.log("[orders] store credit marked used:", { promo_code, order_id });
     }
 
     const row = created[0];
 
-    // 5) Send emails (customer + admin) — non-blocking but logged
+    // 6) Send emails (customer + admin) — AWAIT so Vercel doesn't freeze mid-send
     console.log("[orders] dispatching emails for", order_id);
-    Promise.resolve(
-      sendOrderEmails({
+    try {
+      await sendOrderEmails({
         id: row.id,
-        createdAt: row.created_at,
+        createdAt: (row.created_at
+          ? new Date(row.created_at).toISOString()
+          : new Date().toISOString()),
         customer,
         items,
         subtotal,
@@ -286,10 +286,11 @@ export async function POST(req: Request) {
         freeShipping: free_shipping,
         paymentMethod: payment_method,
         bankSlipUrl: bank_slip_url,
-      })
-    )
-      .then(() => console.log("[orders] emails queued OK for", order_id))
-      .catch((err) => console.error("[orders] email dispatch failed for", order_id, err));
+      });
+    } catch (err) {
+      console.error("[orders] sendOrderEmails failed:", err);
+      // don't fail the order for email errors
+    }
 
     return j(
       {
