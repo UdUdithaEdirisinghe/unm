@@ -313,31 +313,28 @@ export async function sendOrderEmails(order: OrderEmail) {
   }
 }
 
-/* ----------------- contact email (neutral, DM-safe palette) ----------------- */
+/* ----------------- contact email ----------------- */
 
 type ContactPayload = {
   name: string;
   email: string;
-  // we keep phone optional in the type for future, but your form doesn’t send it
+  // your form doesn’t send phone, but we keep it optional for future
   phone?: string;
   subject?: string;
   message: string;
 };
 
-export async function sendContactEmail(payload: ContactPayload) {
-  const to = MAIL_TO_CONTACT || "info@manny.lk";
-  const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
-  const fromHeader =
-    MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
-      ? MAIL_FROM
-      : fallbackFrom;
-
+function renderContactCustomerEmail(payload: ContactPayload) {
   const brand = SITE_NAME || "Manny.lk";
-  // Gmail/iOS dark mode–resistant neutrals
-  const primary = "#111827";  // near-slate-900
-  const subText = "#4b5563";  // slate-600
-  const border = "#e5e7eb";   // slate-200
-  const bg = "#ffffff";       // white background to avoid auto-inversion
+  const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
+  const wa = (NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
+  const waHref = wa ? `https://wa.me/${wa}` : null;
+
+  // light background + neutral text to behave well in Gmail/iOS dark mode
+  const primary = "#111827";  // slate-900-ish
+  const subText = "#4b5563";  // slate-600-ish
+  const border  = "#e5e7eb";  // slate-200-ish
+  const bg      = "#ffffff";  // white
 
   const safe = (s: string | undefined) =>
     (s ?? "")
@@ -347,7 +344,58 @@ export async function sendContactEmail(payload: ContactPayload) {
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
 
-  const html = `
+  return `
+  <div style="margin:0;padding:24px;background:${bg} !important;color:${primary} !important;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
+    <div style="max-width:640px;margin:0 auto;">
+      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg} !important;margin-bottom:16px;">
+        <h2 style="margin:0 0 6px;font-size:20px;color:${primary} !important;">Thanks for your message</h2>
+        <p style="margin:0;color:${subText} !important;">We’ve received your inquiry and a member of the ${brand} team will get back to you shortly.</p>
+      </div>
+
+      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg} !important;">
+        <div style="font-weight:600;margin-bottom:6px;color:${primary} !important;">Your message</div>
+        <div style="white-space:pre-wrap;color:${primary} !important;">${safe(payload.message)}</div>
+      </div>
+
+      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:#f8fafc;margin-top:12px;">
+        <div style="font-weight:600;margin-bottom:6px;color:${primary} !important;">Need to add anything?</div>
+        <div style="color:${subText} !important;">
+          Just reply to this email and it’ll go straight to our team.
+          ${waHref ? ` Or message us on <a href="${waHref}" style="text-decoration:none;color:#2563eb;">WhatsApp</a>.` : ""}
+        </div>
+      </div>
+
+      <div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">
+        © ${new Date().getFullYear()} ${brand}. All rights reserved · <a href="mailto:${contactEmail}" style="text-decoration:none;color:#2563eb;">${contactEmail}</a>
+      </div>
+    </div>
+  </div>`;
+}
+
+export async function sendContactEmail(payload: ContactPayload) {
+  const to = MAIL_TO_CONTACT || "info@manny.lk";
+  const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
+  const fromHeader =
+    MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
+      ? MAIL_FROM
+      : fallbackFrom;
+
+  // ----- Admin-facing email (kept in your neutral palette) -----
+  const brand = SITE_NAME || "Manny.lk";
+  const primary = "#111827";
+  const subText = "#4b5563";
+  const border  = "#e5e7eb";
+  const bg      = "#ffffff";
+
+  const safe = (s: string | undefined) =>
+    (s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
+  const adminHtml = `
   <div style="margin:0;padding:24px;background:${bg} !important;color:${primary} !important;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
     <div style="max-width:640px;margin:0 auto;">
       <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg} !important;margin-bottom:16px;">
@@ -390,14 +438,26 @@ export async function sendContactEmail(payload: ContactPayload) {
 
   try {
     const t = await getTransporter();
+
+    // 1) Send to your team (admin inbox)
     await t.sendMail({
       from: fromHeader,
       to,
       replyTo: payload.email, // one-click reply path to the customer
-      subject: `[Contact] ${payload.subject || "Message"} — ${payload.name || "Customer"}`,
-      html,
+      subject: `New website inquiry — ${payload.name || "Customer"}`,
+      html: adminHtml,
     });
     console.log("[contact] sent to", to);
+
+    // 2) Send an acknowledgement to the customer
+    await t.sendMail({
+      from: fromHeader,
+      to: payload.email,
+      replyTo: to, // any reply from the customer goes to your support inbox
+      subject: `Thanks for your message — ${brand} Support`,
+      html: renderContactCustomerEmail(payload),
+    });
+    console.log("[contact] ack sent to", payload.email);
   } catch (err: any) {
     console.error("[contact] send failed:", err?.message || err);
     throw err;
