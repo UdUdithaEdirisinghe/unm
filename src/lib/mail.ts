@@ -344,3 +344,54 @@ function escapeHtml(s: string) {
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
 }
+
+// --- add this at the bottom of src/lib/mail.ts ---
+
+type ContactPayload = {
+  name: string;
+  email: string;
+  phone?: string;
+  subject?: string;
+  message: string;
+};
+
+export async function sendContactEmail(payload: ContactPayload) {
+  const {
+    SMTP_USER,
+    MAIL_FROM,
+    MAIL_TO_CONTACT = "info@manny.lk",
+  } = process.env as Record<string, string | undefined>;
+
+  // Force the From to be the authenticated mailbox (Zoho requirement)
+  const fromHeader = MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
+    ? MAIL_FROM
+    : `Manny.lk <${SMTP_USER}>`;
+
+  const html = `
+    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
+      <h2 style="margin:0 0 8px">New website inquiry</h2>
+      <div style="margin:10px 0;line-height:1.6">
+        <div><b>Name:</b> ${payload.name || "-"}</div>
+        <div><b>Email:</b> ${payload.email || "-"}</div>
+        ${payload.phone ? `<div><b>Phone:</b> ${payload.phone}</div>` : ""}
+        ${payload.subject ? `<div><b>Subject:</b> ${payload.subject}</div>` : ""}
+      </div>
+      <div style="margin-top:12px;padding:12px;border:1px solid #e5e7eb;border-radius:8px;white-space:pre-wrap">${payload.message}</div>
+    </div>
+  `;
+
+  try {
+    const t = await getTransporter(); // uses your existing verified transporter
+    await t.sendMail({
+      from: fromHeader,
+      to: MAIL_TO_CONTACT,
+      replyTo: payload.email,        // you can reply straight to the customer
+      subject: `New inquiry from ${payload.name || "Customer"}`,
+      html,
+    });
+    console.log("[contact] sent to", MAIL_TO_CONTACT);
+  } catch (err: any) {
+    console.error("[contact] send failed:", err?.message || err);
+    throw err;
+  }
+}
