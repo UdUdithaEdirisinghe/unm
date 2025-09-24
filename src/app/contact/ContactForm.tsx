@@ -3,14 +3,23 @@
 import { useState } from "react";
 import toast, { Toaster } from "react-hot-toast";
 
+type FormState = {
+  name: string;
+  email: string;
+  phone: string;
+  subject: string;
+  message: string;
+  website: string; // honeypot
+};
+
 export default function ContactForm() {
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormState>({
     name: "",
     email: "",
     phone: "",
     subject: "",
     message: "",
-    website: "", // honeypot
+    website: "",
   });
   const [loading, setLoading] = useState(false);
 
@@ -28,9 +37,17 @@ export default function ContactForm() {
         body: JSON.stringify(form),
       });
       const data = await res.json();
-      if (!res.ok || !data?.ok) throw new Error(data?.error || "Failed");
+      if (!res.ok || !data?.ok) throw new Error(data?.error || "Failed to send");
+
       toast.success("Thanks! Your message was sent.");
-      setForm({ name: "", email: "", phone: "", subject: "", message: "", website: "" });
+      setForm({
+        name: "",
+        email: "",
+        phone: "",
+        subject: "",
+        message: "",
+        website: "",
+      });
     } catch (err: any) {
       toast.error(err?.message || "Could not send message.");
     } finally {
@@ -41,11 +58,11 @@ export default function ContactForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Toaster position="top-right" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="block text-sm font-medium text-slate-700">Name *</label>
           <input
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             required
@@ -55,18 +72,19 @@ export default function ContactForm() {
           <label className="block text-sm font-medium text-slate-700">Email *</label>
           <input
             type="email"
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             required
           />
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="block text-sm font-medium text-slate-700">Phone</label>
           <input
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
             value={form.phone}
             onChange={(e) => setForm({ ...form, phone: e.target.value })}
             placeholder="Optional"
@@ -75,24 +93,25 @@ export default function ContactForm() {
         <div>
           <label className="block text-sm font-medium text-slate-700">Subject</label>
           <input
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
+            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
             value={form.subject}
             onChange={(e) => setForm({ ...form, subject: e.target.value })}
             placeholder="Optional"
           />
         </div>
       </div>
+
       <div>
         <label className="block text-sm font-medium text-slate-700">Message *</label>
         <textarea
-          className="mt-1 w-full min-h-[140px] rounded-md border border-slate-300 px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
+          className="mt-1 w-full min-h-[140px] rounded-md border border-slate-300 bg-white px-3 py-2 outline-none focus:ring-2 focus:ring-slate-400"
           value={form.message}
           onChange={(e) => setForm({ ...form, message: e.target.value })}
           required
         />
       </div>
 
-      {/* Honeypot */}
+      {/* Honeypot (spam trap) */}
       <input
         type="text"
         tabIndex={-1}
