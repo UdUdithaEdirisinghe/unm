@@ -3,8 +3,10 @@ import { NextResponse } from "next/server";
 import sql, { toJson } from "../../../lib/db";
 import { getPromoByCode, isPromoActive, computePromoDiscount } from "../../../lib/promos";
 import type { Order } from "../../../lib/products";
-import { sendOrderEmails } from "../../../lib/mail";  // <--- added
+import { sendOrderEmails } from "../../../lib/mail";
 
+// ✅ Ensure this runs on Node (SMTP needs Node, not Edge)
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -128,6 +130,7 @@ export async function POST(req: Request) {
     let usedStoreCredit = false;
 
     if (codeRaw) {
+      // Try PROMO first
       const promo = await getPromoByCode(codeRaw);
       if (promo && isPromoActive(promo)) {
         const { discount, freeShipping } = computePromoDiscount(promo, subtotal);
@@ -136,6 +139,7 @@ export async function POST(req: Request) {
         free_shipping = !!freeShipping;
         promoKind = "promo";
       } else {
+        // Try STORE CREDIT
         const rows: any[] = await sql`
           SELECT code, amount, enabled, min_order_total, starts_at, ends_at, used_order_id
           FROM store_credits
@@ -232,6 +236,7 @@ export async function POST(req: Request) {
       await sql`UPDATE products SET stock = stock - ${it.quantity} WHERE id = ${it.id}`;
     }
 
+    // If we used a STORE CREDIT, mark it used (after order creation)
     if (usedStoreCredit && promo_code) {
       await sql`
         UPDATE store_credits
@@ -243,9 +248,10 @@ export async function POST(req: Request) {
     const row = created[0];
 
     // 5) Send emails (customer + admin) — non-blocking
+    console.log("[orders] dispatching emails for", row.id);
     sendOrderEmails({
       id: row.id,
-      createdAt: row.created_at,
+      createdAt: new Date(row.created_at || Date.now()).toISOString(), // ISO for mailer
       customer,
       items,
       subtotal,
@@ -256,8 +262,8 @@ export async function POST(req: Request) {
       freeShipping: free_shipping,
       paymentMethod: payment_method,
       bankSlipUrl: bank_slip_url,
-    }).catch(err => {
-      console.error("sendOrderEmails failed:", err);
+    }).catch((err) => {
+      console.error("[orders] sendOrderEmails error:", err);
     });
 
     return j(
