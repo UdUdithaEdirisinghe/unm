@@ -100,7 +100,7 @@ function renderCustomerEmail(o: OrderEmail) {
       <div style="padding:16px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc">
         <div style="font-weight:600;margin-bottom:6px">Need help?</div>
         <div style="color:#334155;line-height:1.6">
-          We’ll email you once your order is on the way. If you have questions,
+          If you have any questions,
           ${waHref ? `chat with us on <a href="${waHref}">WhatsApp</a>` : "chat with us on WhatsApp"}
           or email <a href="mailto:${contactEmail}">${contactEmail}</a>.
         </div>
