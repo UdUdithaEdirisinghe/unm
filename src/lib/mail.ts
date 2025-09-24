@@ -2,29 +2,24 @@
 import nodemailer, { SendMailOptions } from "nodemailer";
 
 const {
-  SMTP_HOST,          // e.g. smtp.zoho.com
-  SMTP_PORT,          // "587" (STARTTLS) or "465" (SSL)
-  SMTP_USER,          // mailbox (must be real or alias with SMTP permission)
-  SMTP_PASS,          // Zoho app password
-  MAIL_FROM,          // e.g. 'Manny.lk <support@manny.lk>' (ideally same as SMTP_USER)
-  MAIL_TO_ORDERS,     // e.g. orders@manny.lk
+  SMTP_HOST,
+  SMTP_PORT,
+  SMTP_USER,
+  SMTP_PASS,
+  MAIL_FROM,
+  MAIL_TO_ORDERS,
+  SITE_NAME,
+  MAIL_TO_CONTACT,
+  NEXT_PUBLIC_WHATSAPP_PHONE,
 } = process.env;
 
 /* ----------------- types & helpers ----------------- */
 
 type Line = { name: string; quantity: number; price: number; slug?: string };
 
-type ShipToDifferent = {
-  name?: string;
-  phone?: string;
-  address?: string;
-  city?: string;
-  postal?: string;
-} | undefined;
-
 export type OrderEmail = {
   id: string;
-  createdAt: string; // ISO
+  createdAt: string; // ISO string (DB/UTC is fine)
   customer: {
     firstName: string;
     lastName: string;
@@ -34,7 +29,13 @@ export type OrderEmail = {
     city: string;
     postal?: string;
     notes?: string;
-    shipToDifferent?: ShipToDifferent; // <-- NEW: carry through shipping address
+    shipToDifferent?: {
+      name?: string;
+      phone?: string;
+      address: string;
+      city: string;
+      postal?: string;
+    };
   };
   items: Line[];
   subtotal: number;
@@ -48,176 +49,199 @@ export type OrderEmail = {
 };
 
 const money = (v: number) =>
-  new Intl.NumberFormat("en-LK", { style: "currency", currency: "LKR", maximumFractionDigits: 0 }).format(v);
-
-// Always render date/time in Sri Lanka time to avoid server timezone issues
-function lkDateTime(iso: string) {
-  return new Intl.DateTimeFormat("en-LK", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Colombo",
-  }).format(new Date(iso));
-}
+  new Intl.NumberFormat("en-LK", {
+    style: "currency",
+    currency: "LKR",
+    maximumFractionDigits: 0,
+  }).format(v);
 
 const itemsTable = (items: Line[]) =>
   items
     .map(
       (i) => `
     <tr>
-      <td style="padding:6px 8px;border:1px solid #e5e7eb">${i.name}</td>
-      <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:center">${i.quantity}</td>
-      <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:right">${money(i.price)}</td>
-      <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:right">${money(i.price * i.quantity)}</td>
-    </tr>`
+      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9">${i.name}</td>
+      <td style="padding:8px 10px;text-align:center;border-bottom:1px solid #f1f5f9">${i.quantity}</td>
+      <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f1f5f9">${money(i.price)}</td>
+      <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f1f5f9">${money(
+        i.price * i.quantity
+      )}</td>
+    </tr>
+  `
     )
     .join("");
 
-function addressBlock(
-  title: string,
-  a: { name?: string; phone?: string; address?: string; city?: string; postal?: string; email?: string } | null
-) {
-  if (!a) return "";
-  const lines: string[] = [];
-  if (a.name) lines.push(a.name);
-  if (a.address) lines.push(a.address);
-  if (a.city || a.postal) lines.push([a.city, a.postal].filter(Boolean).join(" "));
-  if (a.phone) lines.push(`Phone: ${a.phone}`);
-  if (a.email) lines.push(`Email: ${a.email}`);
-
-  return `
-  <div style="padding:12px;border:1px solid #e5e7eb;border-radius:8px;margin-top:10px">
-    <div style="font-weight:600;margin-bottom:6px">${title}</div>
-    <div>${lines.map((l) => `${l}<br/>`).join("")}</div>
-  </div>`;
+// Always render in Sri Lanka local time
+const LK_TZ = "Asia/Colombo";
+function fmtDate(d: string) {
+  return new Intl.DateTimeFormat("en-LK", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: LK_TZ,
+  }).format(new Date(d));
 }
+
+/* ----------------- customer email ----------------- */
 
 function renderCustomerEmail(o: OrderEmail) {
-  const billing = {
-    name: `${o.customer.firstName} ${o.customer.lastName}`.trim(),
-    phone: o.customer.phone,
-    address: o.customer.address,
-    city: o.customer.city,
-    postal: o.customer.postal,
-    email: o.customer.email,
-  };
+  const brand = SITE_NAME || "Manny.lk";
+  const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
+  const wa = (NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
+  const waHref = wa ? `https://wa.me/${wa}` : null;
 
-  const shipping =
-    o.customer.shipToDifferent &&
-    (o.customer.shipToDifferent.address || o.customer.shipToDifferent.city)
-      ? {
-          name: o.customer.shipToDifferent.name || billing.name,
-          phone: o.customer.shipToDifferent.phone,
-          address: o.customer.shipToDifferent.address,
-          city: o.customer.shipToDifferent.city,
-          postal: o.customer.shipToDifferent.postal,
-        }
-      : null;
+  const shippingBlock = o.customer.shipToDifferent
+    ? `
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+        <div style="font-weight:600;margin-bottom:6px">Shipping</div>
+        <div style="color:#334155;line-height:1.6">
+          ${o.customer.shipToDifferent.name ? o.customer.shipToDifferent.name + "<br/>" : ""}
+          ${o.customer.shipToDifferent.address}, ${o.customer.shipToDifferent.city}${
+        o.customer.shipToDifferent.postal ? " " + o.customer.shipToDifferent.postal : ""
+      }<br/>
+          ${
+            o.customer.shipToDifferent.phone
+              ? `Phone: ${o.customer.shipToDifferent.phone}`
+              : ""
+          }
+        </div>
+      </div>`
+    : "";
+
+  const notesBlock = o.customer.notes
+    ? `
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+        <div style="font-weight:600;margin-bottom:6px">Order notes</div>
+        <div style="color:#334155;white-space:pre-wrap;line-height:1.6">
+          ${escapeHtml(o.customer.notes)}
+        </div>
+      </div>`
+    : "";
 
   return `
-  <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
-    <h2 style="margin:0 0 10px">Thank you for your order!</h2>
-    <p style="margin:0 0 16px">Order <b>${o.id}</b> • Placed on ${lkDateTime(o.createdAt)}</p>
+  <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f6f8fb;padding:24px;color:#0f172a">
+    <div style="max-width:640px;margin:0 auto">
 
-    <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0;border-radius:8px;overflow:hidden">
-      <thead>
-        <tr>
-          <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb;background:#f8fafc">Item</th>
-          <th style="text-align:center;padding:10px;border-bottom:1px solid #e5e7eb;background:#f8fafc">Qty</th>
-          <th style="text-align:right;padding:10px;border-bottom:1px solid #e5e7eb;background:#f8fafc">Price</th>
-          <th style="text-align:right;padding:10px;border-bottom:1px solid #e5e7eb;background:#f8fafc">Total</th>
-        </tr>
-      </thead>
-      <tbody>${itemsTable(o.items)}</tbody>
-    </table>
-
-    <div style="display:flex;gap:16px;flex-wrap:wrap">
-      <div style="flex:1;min-width:260px">
-        ${addressBlock("Billing", billing)}
-        ${shipping ? addressBlock("Shipping", shipping) : ""}
-        ${
-          o.customer.notes
-            ? `<div style="padding:12px;border:1px solid #e5e7eb;border-radius:8px;margin-top:10px">
-                 <div style="font-weight:600;margin-bottom:6px">Order Notes</div>
-                 <div style="white-space:pre-wrap">${o.customer.notes}</div>
-               </div>`
-            : ""
-        }
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+        <h2 style="margin:0 0 6px;font-size:20px">Thank you for your order!</h2>
+        <p style="margin:0;color:#334155">
+          Your order <b>${o.id}</b> was received on ${fmtDate(o.createdAt)}.
+        </p>
       </div>
 
-      <div style="flex:1;min-width:220px">
-        <div style="padding:12px;border:1px solid #e5e7eb;border-radius:8px">
-          <div style="display:flex;justify-content:space-between;margin:4px 0">
-            <span>Subtotal</span><b>${money(o.subtotal)}</b>
-          </div>
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+        <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:10px;background:#f8fafc">Item</th>
+              <th style="text-align:center;padding:10px;background:#f8fafc">Qty</th>
+              <th style="text-align:right;padding:10px;background:#f8fafc">Price</th>
+              <th style="text-align:right;padding:10px;background:#f8fafc">Total</th>
+            </tr>
+          </thead>
+          <tbody>${itemsTable(o.items)}</tbody>
+        </table>
+
+        <div style="margin-top:12px;text-align:right;color:#334155">
+          <div>Subtotal: <b>${money(o.subtotal)}</b></div>
           ${
             o.promoDiscount
-              ? `<div style="display:flex;justify-content:space-between;margin:4px 0">
-                   <span>Discount ${o.promoCode ? `(${o.promoCode})` : ""}</span>
-                   <b>-${money(o.promoDiscount)}</b>
-                 </div>`
+              ? `<div>Discount ${
+                  o.promoCode ? `(${o.promoCode})` : ""
+                }: <b>-${money(o.promoDiscount)}</b></div>`
               : ""
           }
-          <div style="display:flex;justify-content:space-between;margin:4px 0">
-            <span>Shipping</span><b>${o.freeShipping ? "Free" : money(o.shipping)}</b>
-          </div>
-          <hr style="border:none;border-top:1px solid #e5e7eb;margin:10px 0"/>
-          <div style="display:flex;justify-content:space-between;margin:4px 0;font-size:16px">
-            <span>Grand Total</span><b>${money(o.total)}</b>
-          </div>
-        </div>
-
-        <div style="padding:12px;border:1px solid #e5e7eb;border-radius:8px;margin-top:10px">
-          <div><b>Payment:</b> ${o.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}</div>
-          ${
-            o.bankSlipUrl
-              ? `<div>Bank Slip: <a href="${o.bankSlipUrl}">${o.bankSlipUrl}</a></div>`
-              : ""
-          }
+          <div>Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b></div>
+          <div style="margin-top:8px;font-size:16px">Grand Total: <b>${money(o.total)}</b></div>
         </div>
       </div>
+
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+        <div style="font-weight:600;margin-bottom:6px">Billing</div>
+        <div style="color:#334155;line-height:1.6">
+          ${o.customer.firstName} ${o.customer.lastName}<br/>
+          ${o.customer.address}, ${o.customer.city}${
+    o.customer.postal ? " " + o.customer.postal : ""
+  }<br/>
+          ${o.customer.phone ? `Phone: ${o.customer.phone}<br/>` : ""}Email: ${
+    o.customer.email
+  }
+        </div>
+        <div style="margin-top:10px;color:#334155">
+          <b>Payment:</b> ${
+            o.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"
+          }${o.bankSlipUrl ? ` — <a href="${o.bankSlipUrl}">Bank slip</a>` : ""}
+        </div>
+      </div>
+
+      ${shippingBlock}
+      ${notesBlock}
+
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc">
+        <div style="font-weight:600;margin-bottom:6px">Need help?</div>
+        <div style="color:#334155;line-height:1.6">
+          If you have any questions,
+          ${
+            waHref
+              ? `chat with us on <a href="${waHref}">WhatsApp</a>`
+              : "chat with us on WhatsApp"
+          }
+          or email <a href="mailto:${contactEmail}">${contactEmail}</a>.
+        </div>
+      </div>
+
+      <div style="text-align:center;color:#94a3b8;margin-top:16px;font-size:12px">
+        © ${new Date().getFullYear()} ${brand}. All rights reserved.
+      </div>
+
     </div>
-
-    <p style="margin-top:16px">
-      We’ll email you tracking details once your order is on the way.<br/>
-      Need help? Chat on WhatsApp or email <a href="mailto:info@manny.lk">info@manny.lk</a>.
-    </p>
-
-    <p style="margin-top:12px;color:#64748b;font-size:12px">© ${new Date().getFullYear()} Manny.lk. All rights reserved.</p>
   </div>`;
 }
 
+/* ----------------- admin email (now shows Shipping + Notes too) ----------------- */
+
 function renderAdminEmail(o: OrderEmail) {
-  // Admin message keeps notes & both addresses too
-  const billing = `${o.customer.firstName} ${o.customer.lastName}`.trim();
-  const ship = o.customer.shipToDifferent;
+  const shippingLine = o.customer.shipToDifferent
+    ? `<div><b>Ship to:</b> ${[
+        o.customer.shipToDifferent.name,
+        `${o.customer.shipToDifferent.address}, ${o.customer.shipToDifferent.city}${
+          o.customer.shipToDifferent.postal ? " " + o.customer.shipToDifferent.postal : ""
+        }`,
+        o.customer.shipToDifferent.phone ? `Phone: ${o.customer.shipToDifferent.phone}` : "",
+      ]
+        .filter(Boolean)
+        .join(" — ")}</div>`
+    : "";
+
+  const notesLine = o.customer.notes
+    ? `<div style="margin-top:6px"><b>Notes:</b> ${escapeHtml(o.customer.notes)}</div>`
+    : "";
+
   return `
   <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
     <h2 style="margin:0 0 8px">New order received: ${o.id}</h2>
-    <div>Time: ${lkDateTime(o.createdAt)}</div>
+    <div>Time: ${fmtDate(o.createdAt)}</div>
     <div>Payment: ${o.paymentMethod}${o.bankSlipUrl ? ` — Slip: ${o.bankSlipUrl}` : ""}</div>
-    <div>Customer: ${billing} — ${o.customer.email}${o.customer.phone ? " / " + o.customer.phone : ""}</div>
-    ${
-      ship && (ship.address || ship.city)
-        ? `<div style="margin-top:6px"><b>Ship To:</b> ${[ship.name, ship.address, [ship.city, ship.postal].filter(Boolean).join(" ")].filter(Boolean).join(", ")}</div>`
-        : ""
-    }
-
+    <div>Customer: ${o.customer.firstName} ${o.customer.lastName} — ${o.customer.email}${
+    o.customer.phone ? " / " + o.customer.phone : ""
+  }</div>
+    ${shippingLine}
+    ${notesLine}
     <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0">
       <thead>
         <tr>
-          <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Item</th>
-          <th style="text-align:center;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Qty</th>
-          <th style="text-align:right;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Price</th>
-          <th style="text-align:right;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Total</th>
+          <th style="text-align:left;padding:8px;background:#f8fafc">Item</th>
+          <th style="text-align:center;padding:8px;background:#f8fafc">Qty</th>
+          <th style="text-align:right;padding:8px;background:#f8fafc">Price</th>
+          <th style="text-align:right;padding:8px;background:#f8fafc">Total</th>
         </tr>
       </thead>
       <tbody>${itemsTable(o.items)}</tbody>
     </table>
-
     <div>Subtotal: <b>${money(o.subtotal)}</b> ${
-      o.promoDiscount ? `| Discount: -${money(o.promoDiscount)} (${o.promoCode ?? "code"})` : ""
-    } | Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b> | Grand: <b>${money(o.total)}</b></div>
-    ${o.customer.notes ? `<div style="margin-top:8px"><b>Notes:</b> ${o.customer.notes}</div>` : ""}
+    o.promoDiscount ? `| Discount: -${money(o.promoDiscount)} (${o.promoCode ?? "code"})` : ""
+  } | Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b> | Grand: <b>${money(
+    o.total
+  )}</b></div>
   </div>`;
 }
 
@@ -229,7 +253,7 @@ async function makeTransport(host: string, port: number, secure: boolean) {
   const t = nodemailer.createTransport({
     host,
     port,
-    secure,                // false for 587 (STARTTLS), true for 465 (SSL)
+    secure, // false for 587, true for 465
     auth: { user: SMTP_USER, pass: SMTP_PASS },
     authMethod: "LOGIN",
     requireTLS: !secure,
@@ -281,14 +305,12 @@ async function reallySend(opts: SendMailOptions) {
 /* ----------------- public API ----------------- */
 
 export async function sendOrderEmails(order: OrderEmail) {
-  // Make From align with authenticated mailbox (Zoho requirement)
   const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
   const fromHeader =
     MAIL_FROM && String(MAIL_FROM).toLowerCase().includes(String(SMTP_USER).toLowerCase())
       ? MAIL_FROM
       : fallbackFrom;
 
-  // customer email (ignore failure)
   try {
     await reallySend({
       from: fromHeader,
@@ -300,7 +322,6 @@ export async function sendOrderEmails(order: OrderEmail) {
     console.error("[mail] customer email failed:", err?.message || err);
   }
 
-  // admin email (ignore failure)
   try {
     await reallySend({
       from: fromHeader,
@@ -311,4 +332,15 @@ export async function sendOrderEmails(order: OrderEmail) {
   } catch (err: any) {
     console.error("[mail] admin email failed:", err?.message || err);
   }
+}
+
+/* ----------------- utils ----------------- */
+
+function escapeHtml(s: string) {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
