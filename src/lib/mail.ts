@@ -5,8 +5,11 @@ const {
   SMTP_PORT,          // "587" (STARTTLS) or "465" (SSL)
   SMTP_USER,          // mailbox (must be real or alias with SMTP permission)
   SMTP_PASS,          // Zoho app password
-  MAIL_FROM,          // e.g. 'Manny.lk <support@manny.lk>' (ideally same as SMTP_USER)
+  MAIL_FROM,          // e.g. 'Manny.lk <support@manny.lk>'
   MAIL_TO_ORDERS,     // e.g. orders@manny.lk
+  SITE_NAME,          // optional, e.g. "Manny.lk"
+  MAIL_TO_CONTACT,    // optional, e.g. info@manny.lk
+  NEXT_PUBLIC_WHATSAPP_PHONE, // optional, e.g. 947XXXXXXXX
 } = process.env;
 
 /* ----------------- types & helpers ----------------- */
@@ -37,47 +40,80 @@ const money = (v: number) =>
 const itemsTable = (items: Line[]) =>
   items.map(i => `
     <tr>
-      <td style="padding:6px 8px;border:1px solid #e5e7eb">${i.name}</td>
-      <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:center">${i.quantity}</td>
-      <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:right">${money(i.price)}</td>
-      <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:right">${money(i.price * i.quantity)}</td>
+      <td style="padding:10px;border-bottom:1px solid #f1f5f9">${i.name}</td>
+      <td style="padding:10px;text-align:center;border-bottom:1px solid #f1f5f9">${i.quantity}</td>
+      <td style="padding:10px;text-align:right;border-bottom:1px solid #f1f5f9">${money(i.price)}</td>
+      <td style="padding:10px;text-align:right;border-bottom:1px solid #f1f5f9">${money(i.price * i.quantity)}</td>
     </tr>
   `).join("");
 
+/* ----------------- customer email (new layout) ----------------- */
+
 function renderCustomerEmail(o: OrderEmail) {
+  const brand = SITE_NAME || "Manny.lk";
+  const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
+  const wa = (NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
+  const waHref = wa ? `https://wa.me/${wa}` : null;
+
   return `
-  <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
-    <h2 style="margin:0 0 8px">Thank you for your order!</h2>
-    <p style="margin:0 0 16px">Your order <b>${o.id}</b> was received on ${new Date(o.createdAt).toLocaleString()}.</p>
-    <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0">
-      <thead>
-        <tr>
-          <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Item</th>
-          <th style="text-align:center;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Qty</th>
-          <th style="text-align:right;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Price</th>
-          <th style="text-align:right;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Total</th>
-        </tr>
-      </thead>
-      <tbody>${itemsTable(o.items)}</tbody>
-    </table>
-    <div style="margin:10px 0">
-      <div>Subtotal: <b>${money(o.subtotal)}</b></div>
-      ${o.promoDiscount ? `<div>Discount (${o.promoCode ?? "code"}): <b>-${money(o.promoDiscount)}</b></div>` : ""}
-      <div>Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b></div>
-      <div style="margin-top:6px;font-size:16px">Grand Total: <b>${money(o.total)}</b></div>
+  <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;background:#f6f8fb;padding:24px">
+    <div style="max-width:640px;margin:0 auto">
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;margin-bottom:16px">
+        <h2 style="margin:0 0 6px;font-size:20px">Thank you for your order!</h2>
+        <p style="margin:0;color:#334155">Your order <strong>${o.id}</strong> was received on ${new Date(o.createdAt).toLocaleString()}.</p>
+      </div>
+
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;margin-bottom:16px">
+        <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:10px;background:#f8fafc">Item</th>
+              <th style="text-align:center;padding:10px;background:#f8fafc">Qty</th>
+              <th style="text-align:right;padding:10px;background:#f8fafc">Price</th>
+              <th style="text-align:right;padding:10px;background:#f8fafc">Total</th>
+            </tr>
+          </thead>
+          <tbody>${itemsTable(o.items)}</tbody>
+        </table>
+
+        <div style="margin-top:12px;text-align:right;color:#334155">
+          <div>Subtotal: <strong>${money(o.subtotal)}</strong></div>
+          ${o.promoDiscount ? `<div>Discount ${o.promoCode ? `(${o.promoCode})` : ""}: <strong>-${money(o.promoDiscount)}</strong></div>` : ""}
+          <div>Shipping: <strong>${o.freeShipping ? "Free" : money(o.shipping)}</strong></div>
+          <div style="margin-top:8px;font-size:16px">Grand Total: <strong>${money(o.total)}</strong></div>
+        </div>
+      </div>
+
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:10px;background:#fff;margin-bottom:16px">
+        <div style="font-weight:600;margin-bottom:6px">Billing</div>
+        <div style="color:#334155;line-height:1.6">
+          ${o.customer.firstName} ${o.customer.lastName}<br/>
+          ${o.customer.address}, ${o.customer.city}${o.customer.postal ? " " + o.customer.postal : ""}<br/>
+          ${o.customer.phone ? `Phone: ${o.customer.phone}<br/>` : ""}Email: ${o.customer.email}
+        </div>
+        <div style="margin-top:10px;color:#334155">
+          <strong>Payment:</strong> ${o.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}
+          ${o.bankSlipUrl ? ` — <a href="${o.bankSlipUrl}">Bank slip</a>` : ""}
+        </div>
+      </div>
+
+      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:10px;background:#f8fafc">
+        <div style="font-weight:600;margin-bottom:6px">Need help?</div>
+        <div style="color:#334155;line-height:1.6">
+          We’ll email you once your order is on the way. If you have questions,
+          ${waHref ? `chat with us on <a href="${waHref}">WhatsApp</a>` : "chat with us on WhatsApp"}
+          or email <a href="mailto:${contactEmail}">${contactEmail}</a>.
+        </div>
+      </div>
+
+      <div style="text-align:center;color:#94a3b8;margin-top:16px;font-size:12px">
+        © ${new Date().getFullYear()} ${brand}. All rights reserved.
+      </div>
     </div>
-    <div style="margin:14px 0">
-      <div><b>Payment:</b> ${o.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}</div>
-      ${o.bankSlipUrl ? `<div>Bank Slip: <a href="${o.bankSlipUrl}">${o.bankSlipUrl}</a></div>` : ""}
-    </div>
-    <p style="margin:18px 0 6px"><b>Billing</b><br/>
-      ${o.customer.firstName} ${o.customer.lastName}<br/>
-      ${o.customer.address}, ${o.customer.city}${o.customer.postal ? " " + o.customer.postal : ""}<br/>
-      ${o.customer.phone ? "Phone: " + o.customer.phone + "<br/>" : ""}Email: ${o.customer.email}
-    </p>
-    <p style="margin-top:18px">We’ll notify you once your order is on the way.<br/>— Manny.lk</p>
   </div>`;
 }
+
+/* ----------------- admin email (unchanged) ----------------- */
 
 function renderAdminEmail(o: OrderEmail) {
   return `
@@ -89,10 +125,10 @@ function renderAdminEmail(o: OrderEmail) {
     <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0">
       <thead>
         <tr>
-          <th style="text-align:left;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Item</th>
-          <th style="text-align:center;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Qty</th>
-          <th style="text-align:right;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Price</th>
-          <th style="text-align:right;padding:8px;border:1px solid #e5e7eb;background:#f8fafc">Total</th>
+          <th style="text-align:left;padding:8px;background:#f8fafc">Item</th>
+          <th style="text-align:center;padding:8px;background:#f8fafc">Qty</th>
+          <th style="text-align:right;padding:8px;background:#f8fafc">Price</th>
+          <th style="text-align:right;padding:8px;background:#f8fafc">Total</th>
         </tr>
       </thead>
       <tbody>${itemsTable(o.items)}</tbody>
@@ -110,18 +146,18 @@ async function makeTransport(host: string, port: number, secure: boolean) {
   const t = nodemailer.createTransport({
     host,
     port,
-    secure,                // false for 587 (STARTTLS), true for 465 (SSL)
+    secure,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
     authMethod: "LOGIN",
-    requireTLS: !secure,   // ensure STARTTLS upgrade on 587
-    logger: true,          // visible in Vercel logs
+    requireTLS: !secure,
+    logger: true,
     debug: true,
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
     socketTimeout: 20_000,
     tls: secure ? undefined : { rejectUnauthorized: true },
   });
-  await t.verify();        // show auth/config issues early in logs
+  await t.verify();
   return t;
 }
 
@@ -138,7 +174,6 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
     return cached;
   } catch (e1: any) {
     console.error("[mail] primary SMTP failed:", e1?.message || e1);
-    // fallback to the other Zoho port
     const altPort = wantPort === 465 ? 587 : 465;
     const altSecure = altPort === 465;
     console.log(`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`);
@@ -151,26 +186,20 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
 async function reallySend(opts: SendMailOptions) {
   const t = await getTransporter();
   const info = await t.sendMail(opts);
-  console.log("[mail] sent:", {
-    messageId: info.messageId,
-    response: info.response,
-    to: opts.to,
-    subject: opts.subject,
-  });
+  console.log("[mail] sent:", { messageId: info.messageId, response: info.response, to: opts.to, subject: opts.subject });
   return info;
 }
 
 /* ----------------- public API ----------------- */
 
 export async function sendOrderEmails(order: OrderEmail) {
-  // align From with authenticated mailbox (Zoho requirement)
   const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
   const fromHeader =
     MAIL_FROM && String(MAIL_FROM).toLowerCase().includes(String(SMTP_USER).toLowerCase())
       ? MAIL_FROM
       : fallbackFrom;
 
-  // customer email (ignore failure)
+  // customer email
   try {
     await reallySend({
       from: fromHeader,
@@ -182,7 +211,7 @@ export async function sendOrderEmails(order: OrderEmail) {
     console.error("[mail] customer email failed:", err?.message || err);
   }
 
-  // admin email (ignore failure)
+  // admin email
   try {
     await reallySend({
       from: fromHeader,
