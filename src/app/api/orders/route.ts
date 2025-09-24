@@ -10,6 +10,7 @@ export const revalidate = 0;
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 type CartLine = { id: string; name: string; slug?: string; price: number; quantity: number };
+
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
 /* ---------- helpers ---------- */
@@ -49,7 +50,7 @@ function rowToOrder(r: any): Order {
     paymentMethod: (r.payment_method as Order["paymentMethod"]) ?? "COD",
     bankSlipName: r.bank_slip_name ?? null,
     bankSlipUrl: r.bank_slip_url ?? null,
-    promoKind: (r.promo_kind as Order["promoKind"]) ?? null, // if you added the column
+    promoKind: (r.promo_kind as Order["promoKind"]) ?? null,
   };
 }
 
@@ -81,12 +82,18 @@ export async function POST(req: Request) {
     const body = await req.json();
     const items = parseItems(body.items);
     if (items.length === 0) return j({ error: "Empty cart." }, 400);
+    console.log("[orders] incoming order request:", {
+      items: items.length,
+      hasPromoCode: !!body.promoCode,
+      paymentMethod: body.paymentMethod,
+    });
 
     /* 1) STOCK check */
     const ids = items.map((it) => it.id);
     const productRows: any[] = ids.length
       ? await sql`SELECT id, stock, name FROM products WHERE id = ANY(${ids})`
       : [];
+    console.log("[orders] loaded product stocks:", productRows.length);
 
     const stock = new Map<string, number>();
     const names = new Map<string, string>();
@@ -108,6 +115,7 @@ export async function POST(req: Request) {
       }
     }
     if (shortages.length) {
+      console.warn("[orders] shortages found:", shortages);
       return j(
         { error: "Some items are not available in the requested quantity.", shortages },
         409
@@ -127,7 +135,7 @@ export async function POST(req: Request) {
     let usedStoreCredit = false;
 
     if (codeRaw) {
-      // try PROMO first
+      console.log("[orders] validating code:", codeRaw);
       const promo = await getPromoByCode(codeRaw);
       if (promo && isPromoActive(promo)) {
         const { discount, freeShipping } = computePromoDiscount(promo, subtotal);
@@ -135,8 +143,8 @@ export async function POST(req: Request) {
         promo_discount = num(discount, 0);
         free_shipping = !!freeShipping;
         promoKind = "promo";
+        console.log("[orders] promo applied:", { promo_code, promo_discount, free_shipping });
       } else {
-        // try STORE CREDIT
         const rows: any[] = await sql`
           SELECT code, amount, enabled, min_order_total, starts_at, ends_at, used_order_id
           FROM store_credits
@@ -161,7 +169,12 @@ export async function POST(req: Request) {
             free_shipping = false;
             usedStoreCredit = true;
             promoKind = "store_credit";
+            console.log("[orders] store credit applied:", { promo_code, promo_discount });
+          } else {
+            console.log("[orders] store credit rejected: below min order total");
           }
+        } else {
+          console.log("[orders] code not active or not found in store_credits");
         }
       }
     }
@@ -200,6 +213,17 @@ export async function POST(req: Request) {
     const bank_slip_url = body.bankSlipUrl ?? null;
 
     const order_id = generateOrderId();
+    console.log("[orders] creating order:", {
+      order_id,
+      subtotal,
+      shipping,
+      total,
+      promo_code,
+      promo_discount,
+      free_shipping,
+      promoKind,
+      payment_method,
+    });
 
     /* 4) write order, decrement stock */
     const created: any[] = await sql`
@@ -228,38 +252,44 @@ export async function POST(req: Request) {
       )
       RETURNING *
     `;
+    console.log("[orders] order inserted:", { order_id });
 
     for (const it of items) {
       await sql`UPDATE products SET stock = stock - ${it.quantity} WHERE id = ${it.id}`;
     }
+    console.log("[orders] stock decremented for", items.length, "items");
 
-    // mark store credit used only after successful order creation
     if (usedStoreCredit && promo_code) {
       await sql`
         UPDATE store_credits
         SET used_order_id = ${order_id}, used_at = now()
         WHERE LOWER(code) = LOWER(${promo_code}) AND used_order_id IS NULL
       `;
+      console.log("[orders] store credit marked used:", { promo_code, order_id });
     }
 
     const row = created[0];
 
-    // 5) Send emails (non-blocking). Logs help verify on Vercel.
-    console.log("[orders] dispatching emails for", row.id);
-    sendOrderEmails({
-      id: row.id,
-      createdAt: row.created_at,
-      customer,
-      items,
-      subtotal,
-      shipping,
-      total,
-      promoCode: promo_code,
-      promoDiscount: promo_discount || null,
-      freeShipping: free_shipping,
-      paymentMethod: payment_method,
-      bankSlipUrl: bank_slip_url,
-    }).catch(err => console.error("sendOrderEmails failed:", err));
+    // 5) Send emails (customer + admin) — non-blocking but logged
+    console.log("[orders] dispatching emails for", order_id);
+    Promise.resolve(
+      sendOrderEmails({
+        id: row.id,
+        createdAt: row.created_at,
+        customer,
+        items,
+        subtotal,
+        shipping,
+        total,
+        promoCode: promo_code,
+        promoDiscount: promo_discount || null,
+        freeShipping: free_shipping,
+        paymentMethod: payment_method,
+        bankSlipUrl: bank_slip_url,
+      })
+    )
+      .then(() => console.log("[orders] emails queued OK for", order_id))
+      .catch((err) => console.error("[orders] email dispatch failed for", order_id, err));
 
     return j(
       {
