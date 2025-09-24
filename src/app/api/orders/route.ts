@@ -5,14 +5,11 @@ import { getPromoByCode, isPromoActive, computePromoDiscount } from "../../../li
 import type { Order } from "../../../lib/products";
 import { sendOrderEmails } from "../../../lib/mail";
 
-// ✅ Ensure this runs on Node (SMTP needs Node, not Edge)
-export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 type CartLine = { id: string; name: string; slug?: string; price: number; quantity: number };
-
 const num = (v: any, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
 /* ---------- helpers ---------- */
@@ -52,7 +49,7 @@ function rowToOrder(r: any): Order {
     paymentMethod: (r.payment_method as Order["paymentMethod"]) ?? "COD",
     bankSlipName: r.bank_slip_name ?? null,
     bankSlipUrl: r.bank_slip_url ?? null,
-    promoKind: (r.promo_kind as Order["promoKind"]) ?? null,
+    promoKind: (r.promo_kind as Order["promoKind"]) ?? null, // if you added the column
   };
 }
 
@@ -130,7 +127,7 @@ export async function POST(req: Request) {
     let usedStoreCredit = false;
 
     if (codeRaw) {
-      // Try PROMO first
+      // try PROMO first
       const promo = await getPromoByCode(codeRaw);
       if (promo && isPromoActive(promo)) {
         const { discount, freeShipping } = computePromoDiscount(promo, subtotal);
@@ -139,7 +136,7 @@ export async function POST(req: Request) {
         free_shipping = !!freeShipping;
         promoKind = "promo";
       } else {
-        // Try STORE CREDIT
+        // try STORE CREDIT
         const rows: any[] = await sql`
           SELECT code, amount, enabled, min_order_total, starts_at, ends_at, used_order_id
           FROM store_credits
@@ -236,7 +233,7 @@ export async function POST(req: Request) {
       await sql`UPDATE products SET stock = stock - ${it.quantity} WHERE id = ${it.id}`;
     }
 
-    // If we used a STORE CREDIT, mark it used (after order creation)
+    // mark store credit used only after successful order creation
     if (usedStoreCredit && promo_code) {
       await sql`
         UPDATE store_credits
@@ -247,11 +244,11 @@ export async function POST(req: Request) {
 
     const row = created[0];
 
-    // 5) Send emails (customer + admin) — non-blocking
+    // 5) Send emails (non-blocking). Logs help verify on Vercel.
     console.log("[orders] dispatching emails for", row.id);
     sendOrderEmails({
       id: row.id,
-      createdAt: new Date(row.created_at || Date.now()).toISOString(), // ISO for mailer
+      createdAt: row.created_at,
       customer,
       items,
       subtotal,
@@ -262,9 +259,7 @@ export async function POST(req: Request) {
       freeShipping: free_shipping,
       paymentMethod: payment_method,
       bankSlipUrl: bank_slip_url,
-    }).catch((err) => {
-      console.error("[orders] sendOrderEmails error:", err);
-    });
+    }).catch(err => console.error("sendOrderEmails failed:", err));
 
     return j(
       {

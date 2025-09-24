@@ -2,16 +2,20 @@
 import nodemailer, { SendMailOptions } from "nodemailer";
 
 const {
-  SMTP_HOST,
+  SMTP_HOST,          // e.g. smtp.zoho.com
   SMTP_PORT,          // "587" (STARTTLS) or "465" (SSL)
-  SMTP_USER,          // e.g. support@manny.lk
-  SMTP_PASS,          // Zoho "App Password" (not your login password)
-  MAIL_FROM,          // e.g. 'Manny.lk <support@manny.lk>'
+  SMTP_USER,          // e.g. support@manny.lk  (must be a real Zoho mailbox or approved alias)
+  SMTP_PASS,          // Zoho "App Password" (NOT your login password)
+  MAIL_FROM,          // e.g. 'Manny.lk <support@manny.lk>' (should match SMTP_USER address)
   MAIL_TO_ORDERS,     // e.g. orders@manny.lk
+  NODE_ENV,
 } = process.env;
 
+/* ----------------- types & helpers ----------------- */
+
 type Line = { name: string; quantity: number; price: number; slug?: string };
-type OrderEmail = {
+
+export type OrderEmail = {
   id: string;
   createdAt: string;
   customer: {
@@ -29,16 +33,11 @@ type OrderEmail = {
   bankSlipUrl?: string | null;
 };
 
-function money(v: number) {
-  return new Intl.NumberFormat("en-LK", {
-    style: "currency",
-    currency: "LKR",
-    maximumFractionDigits: 0,
-  }).format(v);
-}
+const money = (v: number) =>
+  new Intl.NumberFormat("en-LK", { style: "currency", currency: "LKR", maximumFractionDigits: 0 }).format(v);
 
-function itemsTable(items: Line[]) {
-  return items.map(i => `
+const itemsTable = (items: Line[]) =>
+  items.map(i => `
     <tr>
       <td style="padding:6px 8px;border:1px solid #e5e7eb">${i.name}</td>
       <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:center">${i.quantity}</td>
@@ -46,7 +45,6 @@ function itemsTable(items: Line[]) {
       <td style="padding:6px 8px;border:1px solid #e5e7eb;text-align:right">${money(i.price * i.quantity)}</td>
     </tr>
   `).join("");
-}
 
 function renderCustomerEmail(o: OrderEmail) {
   return `
@@ -106,32 +104,26 @@ function renderAdminEmail(o: OrderEmail) {
   </div>`;
 }
 
-/* ---------- Transport factory ---------- */
+/* ----------------- transport (with verify + fallback) ----------------- */
 
 let cached: nodemailer.Transporter | null = null;
 
-async function makeTransport(
-  host: string,
-  port: number,
-  secure: boolean
-): Promise<nodemailer.Transporter> {
+async function makeTransport(host: string, port: number, secure: boolean) {
   const t = nodemailer.createTransport({
     host,
     port,
-    secure,                      // false for 587, true for 465
+    secure, // false for 587 (STARTTLS), true for 465 (SSL)
     auth: { user: SMTP_USER, pass: SMTP_PASS },
-    authMethod: "LOGIN",         // force Zoho-friendly auth
-    requireTLS: !secure,         // STARTTLS required if not SSL
-    logger: true,
+    authMethod: "LOGIN",
+    requireTLS: !secure,
+    logger: true, // visible in Vercel logs
     debug: true,
     connectionTimeout: 15_000,
     greetingTimeout: 15_000,
     socketTimeout: 20_000,
-    tls: secure
-      ? { minVersion: "TLSv1.2", servername: host }
-      : { minVersion: "TLSv1.2", servername: host, rejectUnauthorized: true },
+    tls: secure ? undefined : { rejectUnauthorized: true },
   });
-  await t.verify();
+  await t.verify(); // surface auth/config errors in logs
   return t;
 }
 
@@ -139,43 +131,49 @@ async function getTransporter(): Promise<nodemailer.Transporter> {
   if (cached) return cached;
   const host = SMTP_HOST || "smtp.zoho.com";
   const wantPort = Number(SMTP_PORT || 587);
+  const wantSecure = wantPort === 465;
 
   try {
-    const secure = wantPort === 465;
-    console.log(`[mail] trying SMTP ${host}:${wantPort} secure=${secure}`);
-    cached = await makeTransport(host, wantPort, secure);
+    console.log(`[mail] trying SMTP ${host}:${wantPort} secure=${wantSecure}`);
+    cached = await makeTransport(host, wantPort, wantSecure);
     console.log("[mail] SMTP verify OK on desired port");
     return cached;
   } catch (e1: any) {
     console.error("[mail] primary SMTP failed:", e1?.message || e1);
-    // fallback port
     const altPort = wantPort === 465 ? 587 : 465;
     const altSecure = altPort === 465;
-    console.log(`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`);
-    cached = await makeTransport(host, altPort, altSecure);
-    console.log("[mail] SMTP verify OK on fallback port");
-    return cached;
+    try {
+      console.log(`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`);
+      cached = await makeTransport(host, altPort, altSecure);
+      console.log("[mail] SMTP verify OK on fallback port");
+      return cached;
+    } catch (e2: any) {
+      console.error("[mail] fallback SMTP failed:", e2?.message || e2);
+      throw e2;
+    }
   }
 }
 
 async function reallySend(opts: SendMailOptions) {
   const t = await getTransporter();
   const info = await t.sendMail(opts);
-  console.log("[mail] sent:", {
-    messageId: info.messageId,
-    response: info.response,
-    to: opts.to,
-    subject: opts.subject,
-  });
+  console.log("[mail] sent:", { messageId: info.messageId, response: info.response, to: opts.to, subject: opts.subject });
   return info;
 }
 
-/* ---------- Exported sender ---------- */
+/* ----------------- public API ----------------- */
 
 export async function sendOrderEmails(order: OrderEmail) {
+  // Force From to match the authenticated mailbox (Zoho requirement)
+  const fromBrand = `Manny.lk <${SMTP_USER}>`;
+  const fromHeader = MAIL_FROM && MAIL_FROM.toLowerCase().includes(String(SMTP_USER).toLowerCase())
+    ? MAIL_FROM
+    : fromBrand;
+
+  // customer email (ignore failure)
   try {
     await reallySend({
-      from: MAIL_FROM || `Manny.lk <${SMTP_USER}>`,
+      from: fromHeader,
       to: order.customer.email,
       subject: `Order Confirmation — ${order.id}`,
       html: renderCustomerEmail(order),
@@ -184,9 +182,10 @@ export async function sendOrderEmails(order: OrderEmail) {
     console.error("[mail] customer email failed:", err?.message || err);
   }
 
+  // admin email (ignore failure)
   try {
     await reallySend({
-      from: MAIL_FROM || `Manny.lk <${SMTP_USER}>`,
+      from: fromHeader,
       to: MAIL_TO_ORDERS || SMTP_USER,
       subject: `New Order — ${order.id} — ${order.customer.firstName} ${order.customer.lastName}`,
       html: renderAdminEmail(order),
