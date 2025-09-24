@@ -20,7 +20,7 @@ export async function POST(req: Request) {
       return j({ error: "Please fill name, email, and message." }, 400);
     }
 
-    await sendContactEmail({ name, email, phone, subject, message });
+    await sendContactEmail({ name, email, subject, message });
     return j({ ok: true });
   } catch (e: any) {
     console.error("[contact] route failed:", e?.message || e);
