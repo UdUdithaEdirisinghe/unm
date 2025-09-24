@@ -9,27 +9,21 @@ const j = (d: any, s = 200) => NextResponse.json(d, { status: s });
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { name = "", email = "", subject = "", message = "", company = "" } = body || {};
+    const body = await req.json().catch(() => ({}));
+    const name = String(body?.name || "").trim();
+    const email = String(body?.email || "").trim();
+    const message = String(body?.message || "").trim();
+    const phone = body?.phone ? String(body.phone).trim() : undefined;
+    const subject = body?.subject ? String(body.subject).trim() : undefined;
 
-    // Basic validation
-    const okEmail = typeof email === "string" && /\S+@\S+\.\S+/.test(email);
-    if (!name || !okEmail || !subject || !message) {
-      return j({ error: "Please fill all required fields." }, 400);
+    if (!name || !email || !message) {
+      return j({ error: "Please fill name, email, and message." }, 400);
     }
-    // Honeypot check
-    if (company) return j({ ok: true }); // silently ignore bots
 
-    await sendContactEmail({
-      name: String(name),
-      email: String(email),
-      subject: String(subject),
-      message: String(message),
-    });
-
+    await sendContactEmail({ name, email, phone, subject, message });
     return j({ ok: true });
   } catch (e: any) {
-    console.error("contact route error:", e);
-    return j({ error: "Failed to send message." }, 500);
+    console.error("[contact] route failed:", e?.message || e);
+    return j({ error: "Failed to send message. Please try again." }, 500);
   }
 }
