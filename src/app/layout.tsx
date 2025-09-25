@@ -9,39 +9,48 @@ import ToastProvider from "../components/ui/ToastProvider";
 import "./globals.css";
 
 /**
- * Favicon / app icons
- * Put your logo at:
- *   public/favicon.png           (main)
- *   public/favicon.ico           (fallback, optional)
- *   public/apple-touch-icon.png  (optional, iOS home screen)
+ * Favicon / app icons (files live in /public)
+ * You can reuse the same PNG for all sizes for now.
  */
+const FV = "/favicon.png?v=2";           // bump v=2 -> v=3 next time you replace the icon
+const ICO = "/favicon.ico?v=2";
+const APPLE = "/apple-touch-icon.png?v=2";
+
 export const metadata: Metadata = {
   title: {
     default: "Manny.lk",
     template: "%s | Manny.lk",
   },
   icons: {
-    icon: [{ url: "/favicon.png", type: "image/png" }], // ✅ always use your favicon.png
-    shortcut: "/favicon.png", // make shortcut the same PNG
-    apple: "/apple-touch-icon.png",
+    icon: [
+      { url: FV, type: "image/png", sizes: "16x16" },
+      { url: FV, type: "image/png", sizes: "32x32" },
+      { url: FV, type: "image/png" }, // generic
+      { url: ICO, type: "image/x-icon" },
+    ],
+    shortcut: FV,
+    apple: APPLE,
   },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="h-full">
+      {/* Extra <link>s for stubborn caches / some user agents */}
+      <head>
+        <link rel="icon" type="image/png" sizes="16x16" href={FV} />
+        <link rel="icon" type="image/png" sizes="32x32" href={FV} />
+        <link rel="icon" type="image/png" href={FV} />
+        <link rel="shortcut icon" href={ICO} />
+        <link rel="apple-touch-icon" href={APPLE} />
+      </head>
+
       <body className="min-h-screen flex flex-col">
         <CartProvider>
           <Navbar />
-          {/* Global toasts (top-center, just under the navbar) */}
           <ToastProvider />
-
-          {/* Main area */}
           <main className="site-container flex-1">{children}</main>
-
           <Footer />
-
-          {/* WhatsApp bubble on selected routes */}
           <FloatingWhatsApp
             phone="+94760703523"
             label="Need Help? Chat with us"
