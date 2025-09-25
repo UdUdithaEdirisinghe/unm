@@ -28,6 +28,20 @@ const nextConfig: NextConfig = {
       // },
     ],
   },
+  // ✅ add cache-control headers for static files like favicon
+  async headers() {
+    return [
+      {
+        source: "/:all*(ico|png|svg|jpg|jpeg|webp)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=0, must-revalidate", 
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
