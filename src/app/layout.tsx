@@ -1,10 +1,34 @@
+// src/app/layout.tsx
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
 import Navbar from "../components/Navbar";
-import Footer from "../components/Footer"; // <- match casing
+import Footer from "../components/Footer";
 import { CartProvider } from "../components/cart/CartProvider";
 import FloatingWhatsApp from "../components/FloatingWhatsApp";
 import ToastProvider from "../components/ui/ToastProvider";
 import "./globals.css";
+
+/**
+ * Favicon / app icons
+ * Put your logo at:
+ *   public/favicon.svg            (preferred)
+ *   public/favicon.ico            (fallback)
+ *   public/apple-touch-icon.png   (optional, iOS home screen)
+ */
+export const metadata: Metadata = {
+  title: {
+    default: "Manny.lk",
+    template: "%s | Manny.lk",
+  },
+  icons: {
+    icon: [
+      { url: "/favicon.png", type: "image/png" },
+      { url: "/favicon.ico" }, // fallback for older browsers
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
+};
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
