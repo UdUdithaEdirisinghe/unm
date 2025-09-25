@@ -44,45 +44,33 @@ export default function Footer() {
             {/* Social */}
             <div className="text-center sm:text-left">
               <h3 className="text-slate-200 font-semibold mb-3">Follow Us</h3>
-              <div className="flex justify-center sm:justify-start gap-4">
+              <div className="flex justify-center sm:justify-start gap-4 text-slate-400">
                 <a
-                  href="https://www.instagram.com/"
+                  href="https://www.instagram.com/your-handle"
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Instagram"
-                  className="text-slate-400 hover:text-slate-200"
+                  className="hover:text-slate-200"
                 >
-                  {/* Instagram SVG */}
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Z" stroke="currentColor" strokeWidth="1.5"/>
-                    <circle cx="12" cy="12" r="3.5" stroke="currentColor" strokeWidth="1.5"/>
-                    <circle cx="17.5" cy="6.5" r="1.25" fill="currentColor"/>
-                  </svg>
+                  <i className="fab fa-instagram text-xl"></i>
                 </a>
                 <a
-                  href="https://www.facebook.com/"
+                  href="https://www.facebook.com/your-page"
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Facebook"
-                  className="text-slate-400 hover:text-slate-200"
+                  className="hover:text-slate-200"
                 >
-                  {/* Facebook SVG */}
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M14.5 8H16V4h-2a4 4 0 0 0-4 4v2H8v4h2v8h4v-8h2.2l.3-4H14V8a1 1 0 0 1 1-1Z" fill="currentColor"/>
-                  </svg>
+                  <i className="fab fa-facebook text-xl"></i>
                 </a>
                 <a
-                  href="https://www.tiktok.com/"
+                  href="https://www.tiktok.com/@your-handle"
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="TikTok"
-                  className="text-slate-400 hover:text-slate-200"
+                  className="hover:text-slate-200"
                 >
-                  {/* TikTok SVG */}
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <path d="M14 3v8.5a4.5 4.5 0 1 1-3.6-1.77" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                    <path d="M14 3c1.2 2.1 3.3 3.5 5.7 3.6V10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
+                  <i className="fab fa-tiktok text-xl"></i>
                 </a>
               </div>
             </div>
