@@ -11,9 +11,9 @@ import "./globals.css";
 /**
  * Favicon / app icons
  * Put your logo at:
- *   public/favicon.svg            (preferred)
- *   public/favicon.ico            (fallback)
- *   public/apple-touch-icon.png   (optional, iOS home screen)
+ *   public/favicon.png           (main)
+ *   public/favicon.ico           (fallback, optional)
+ *   public/apple-touch-icon.png  (optional, iOS home screen)
  */
 export const metadata: Metadata = {
   title: {
@@ -21,11 +21,8 @@ export const metadata: Metadata = {
     template: "%s | Manny.lk",
   },
   icons: {
-    icon: [
-      { url: "/favicon.png", type: "image/png" },
-      { url: "/favicon.ico" }, // fallback for older browsers
-    ],
-    shortcut: "/favicon.ico",
+    icon: [{ url: "/favicon.png", type: "image/png" }], // ✅ always use your favicon.png
+    shortcut: "/favicon.png", // make shortcut the same PNG
     apple: "/apple-touch-icon.png",
   },
 };
