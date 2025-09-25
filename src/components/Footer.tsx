@@ -76,7 +76,7 @@ export default function Footer() {
             <div className="mt-3 flex items-center justify-center gap-4 md:justify-start">
               {/* Instagram */}
               <a
-                href="https://instagram.com/your-handle"
+                href="https://instagram.com/"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Instagram"
@@ -89,7 +89,7 @@ export default function Footer() {
 
               {/* Facebook */}
               <a
-                href="https://facebook.com/your-page"
+                href="https://facebook.com/"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Facebook"
@@ -102,7 +102,7 @@ export default function Footer() {
 
               {/* TikTok */}
               <a
-                href="https://www.tiktok.com/@your-handle"
+                href="https://www.tiktok.com/"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="TikTok"
