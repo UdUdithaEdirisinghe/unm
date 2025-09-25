@@ -1,77 +1,62 @@
+// src/app/products/page.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { getProducts, type Product } from "../../lib/products";
 import ProductsClient from "../../components/ProductsClient";
 
-/* ---------- search helpers ---------- */
-function escapeRegExp(s: string) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/* ---------- fuzzy helpers ---------- */
+function normalize(s: string): string {
+  return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-/* fuzzy: allow 1-char mismatch */
-function fuzzyIncludes(hay: string, needle: string): boolean {
-  if (hay.includes(needle)) return true;
-  if (needle.length < 3) return false;
+// Levenshtein distance (for typos tolerance)
+function levenshtein(a: string, b: string): number {
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () =>
+    Array(b.length + 1).fill(0)
+  );
 
-  for (let i = 0; i < hay.length - needle.length + 1; i++) {
-    let mismatches = 0;
-    for (let j = 0; j < needle.length; j++) {
-      if (hay[i + j] !== needle[j]) {
-        mismatches++;
-        if (mismatches > 1) break;
-      }
-    }
-    if (mismatches <= 1) return true;
-  }
-  return false;
-}
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
 
-/* ---------- synonyms / normalization ---------- */
-const SYNONYMS: Record<string, string[]> = {
-  "power bank": ["powerbank", "power-bank", "pwerbank", "power bnk"],
-  charger: ["adaptor", "adapter", "wall charger", "gan"],
-  cable: ["usb-c", "type c", "lightning", "micro usb", "usb a", "usb"],
-  audio: ["earbud", "earbuds", "headphone", "headset", "speaker"],
-};
-
-function variantsFor(token: string): string[] {
-  const t = token.toLowerCase();
-  for (const [key, alts] of Object.entries(SYNONYMS)) {
-    if (t === key || alts.includes(t)) {
-      return [key, ...alts];
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1, // delete
+        dp[i][j - 1] + 1, // insert
+        dp[i - 1][j - 1] + cost // replace
+      );
     }
   }
-  return [t];
+  return dp[a.length][b.length];
 }
 
-/* ---------- matching (fixed) ---------- */
-function matches(product: Product, q: string) {
-  const tokens = q
-    .toLowerCase()
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter(Boolean);
-
+// Check if query matches product
+function matches(product: Product, q: string): boolean {
+  const tokens = normalize(q).split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return true;
 
-  const haystacks: string[] = [
-    product.name ?? "",
-    product.brand ?? "",
-    (product as any).category ?? "",
+  const fields = [
+    normalize(product.name ?? ""),
+    normalize(product.brand ?? ""),
+    normalize((product as any).category ?? ""),
     Array.isArray(product.specs)
-      ? (product.specs as unknown as string[]).join(" ")
-      : Object.values(product.specs ?? {}).join(" "),
-  ]
-    .map((s) => String(s).toLowerCase())
-    .filter(Boolean);
+      ? normalize((product.specs as unknown as string[]).join(" "))
+      : normalize(Object.values(product.specs ?? {}).join(" ")),
+  ];
 
-  // ✅ For EACH token, match if ANY of its variants hit
-  return tokens.every((original) => {
-    const variants = variantsFor(original);
-    return variants.some((t) => {
-      const re = new RegExp(`\\b${escapeRegExp(t)}\\b`, "i");
-      return haystacks.some((h) => re.test(h) || fuzzyIncludes(h, t));
+  return tokens.every((t) => {
+    return fields.some((field) => {
+      if (!field) return false;
+
+      // ✅ Exact match inside field
+      if (field.includes(t)) return true;
+
+      // ✅ Allow fuzzy match (distance ≤ 2, but only for words of length ≥ 4)
+      return field
+        .split(/\s+/)
+        .some((word) => word.length > 3 && levenshtein(t, word) <= 2);
     });
   });
 }
@@ -80,7 +65,7 @@ function matches(product: Product, q: string) {
 function sortProducts(a: Product, b: Product) {
   const aIn = (a.stock ?? 0) > 0;
   const bIn = (b.stock ?? 0) > 0;
-  if (aIn !== bIn) return aIn ? -1 : 1; // in-stock first
+  if (aIn !== bIn) return aIn ? -1 : 1;
 
   const aSale =
     typeof a.salePrice === "number" &&
@@ -90,13 +75,13 @@ function sortProducts(a: Product, b: Product) {
     typeof b.salePrice === "number" &&
     b.salePrice > 0 &&
     b.salePrice < b.price;
-  if (aSale !== bSale) return aSale ? -1 : 1; // sale first
+  if (aSale !== bSale) return aSale ? -1 : 1;
 
   const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
   const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-  if (aCreated !== bCreated) return bCreated - aCreated; // newest first
+  if (aCreated !== bCreated) return bCreated - aCreated;
 
-  return a.name.localeCompare(b.name); // stable fallback
+  return a.name.localeCompare(b.name);
 }
 
 /* ---------- category helpers ---------- */
@@ -110,18 +95,16 @@ function slugify(s: string) {
 }
 
 function normalizeCategoryName(raw: string): string {
-  const s = (raw || "").trim().toLowerCase();
+  const s = normalize(raw);
 
-  if (/power\s*-?\s*bank/.test(s)) return "power-banks";
-  if (/(charger|adaptor|adapter|gan|wall\s*charger|car\s*charger)/.test(s))
+  if (/power\s*bank/.test(s)) return "power-banks";
+  if (/(charger|adapter|adaptor|gan|wall charger|car charger)/.test(s))
     return "chargers";
-  if (/(cable|usb|type\s*-?\s*c|lightning|micro\s*-?\s*usb)/.test(s))
-    return "cables";
+  if (/(cable|usb|type c|lightning|micro usb)/.test(s)) return "cables";
   if (/(backpack|bag|sleeve|pouch|case)/.test(s)) return "bags";
   if (/(earbud|headphone|headset|speaker|audio)/.test(s)) return "audio";
 
-  const fallback = slugify(raw);
-  return fallback || "others";
+  return slugify(raw) || "others";
 }
 
 function inferCategory(p: Product): string {
