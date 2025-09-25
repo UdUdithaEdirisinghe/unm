@@ -8,25 +8,19 @@ import FloatingWhatsApp from "../components/FloatingWhatsApp";
 import ToastProvider from "../components/ui/ToastProvider";
 import "./globals.css";
 
-/**
- * Favicon / app icons (files live in /public)
- * You can reuse the same PNG for all sizes for now.
- */
-const FV = "/favicon.png?v=2";           // bump v=2 -> v=3 next time you replace the icon
-const ICO = "/favicon.ico?v=2";
-const APPLE = "/apple-touch-icon.png?v=2";
+// Versioned asset URLs (new paths bust old CDN/browser caches)
+const FV = "/favicons/manny-v1.png";
+const ICO = "/favicons/manny-v1.ico";              // optional
+const APPLE = "/favicons/apple-touch-icon-v1.png"; // 180×180 recommended
 
 export const metadata: Metadata = {
-  title: {
-    default: "Manny.lk",
-    template: "%s | Manny.lk",
-  },
+  title: { default: "Manny.lk", template: "%s | Manny.lk" },
   icons: {
     icon: [
       { url: FV, type: "image/png", sizes: "16x16" },
       { url: FV, type: "image/png", sizes: "32x32" },
-      { url: FV, type: "image/png" }, // generic
-      { url: ICO, type: "image/x-icon" },
+      { url: FV, type: "image/png" },         // generic
+      { url: ICO, type: "image/x-icon" },     // optional fallback
     ],
     shortcut: FV,
     apple: APPLE,
@@ -36,11 +30,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="h-full">
-      {/* Extra <link>s for stubborn caches / some user agents */}
+      {/* extra links help some stubborn UAs; harmless elsewhere */}
       <head>
         <link rel="icon" type="image/png" sizes="16x16" href={FV} />
         <link rel="icon" type="image/png" sizes="32x32" href={FV} />
         <link rel="icon" type="image/png" href={FV} />
+        {/* remove if you didn't add the ICO */}
         <link rel="shortcut icon" href={ICO} />
         <link rel="apple-touch-icon" href={APPLE} />
       </head>
@@ -54,12 +49,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <FloatingWhatsApp
             phone="+94760703523"
             label="Need Help? Chat with us"
-            routes={[
-              "/",
-              "/products", "/products/", "/products/*",
-              "/about", "/contact", "/policies",
-              "/faq", "/facts", "/cart",
-            ]}
+            routes={["/","/products","/products/","/products/*","/about","/contact","/policies","/faq","/facts","/cart"]}
           />
         </CartProvider>
       </body>
