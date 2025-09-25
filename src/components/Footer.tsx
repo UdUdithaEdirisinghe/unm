@@ -20,7 +20,7 @@ export default function Footer() {
         </div>
 
         {/* Middle: Columns */}
-        <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-3">
+        <div className="mt-8 grid grid-cols-1 gap-10 md:grid-cols-3 md:gap-12">
           {/* Quick links */}
           <div className="text-center md:text-left">
             <h3 className="text-sm font-semibold text-slate-200">Quick Links</h3>
@@ -76,7 +76,7 @@ export default function Footer() {
             <div className="mt-3 flex items-center justify-center gap-4 md:justify-start">
               {/* Instagram */}
               <a
-                href="https://instagram.com/"
+                href="https://instagram.com/your-handle"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Instagram"
@@ -89,7 +89,7 @@ export default function Footer() {
 
               {/* Facebook */}
               <a
-                href="https://facebook.com/"
+                href="https://facebook.com/your-page"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Facebook"
@@ -102,7 +102,7 @@ export default function Footer() {
 
               {/* TikTok */}
               <a
-                href="https://www.tiktok.com/"
+                href="https://www.tiktok.com/@your-handle"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="TikTok"
