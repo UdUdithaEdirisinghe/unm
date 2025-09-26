@@ -1,19 +1,19 @@
 // src/lib/invoice.ts
 /**
 * PDF invoice generator for the admin attachment.
-* - Embeds a TTF font (no AFM lookups -> no ENOENT)
-* - Dynamically loads pdfkit + fontkit with local TS ignores (no global .d.ts needed)
-* - If the TTF is missing, falls back to a minimal PDF (still valid) so email send never breaks
+* - Uses PDFKit *standalone* build so no AFM files are read from disk
+* - If Inter TTF is present we embed it; otherwise bundled fonts still work
+* - Never throws for font issues — your email will include a valid PDF
 */
 
 import type { OrderEmail } from "./mail";
 import fs from "fs";
 import path from "path";
 
-// mm → pt
+/* ---------- helpers ---------- */
+
 const mm = (v: number) => (v * 72) / 25.4;
 
-// Currency (LKR, 0 decimals)
 const money = (v: number) =>
 new Intl.NumberFormat("en-LK", {
 style: "currency",
@@ -21,7 +21,6 @@ currency: "LKR",
 maximumFractionDigits: 0,
 }).format(v);
 
-// Date in LK timezone
 const fmtLK = (iso: string) =>
 new Intl.DateTimeFormat("en-LK", {
 dateStyle: "medium",
@@ -29,65 +28,55 @@ timeStyle: "short",
 timeZone: "Asia/Colombo",
 }).format(new Date(iso));
 
-/** Load pdfkit + fontkit in a way that won't upset TypeScript or the bundler */
-async function loadPDFStuff(): Promise<{ PDFDocument: any; haveFontkit: boolean }> {
-// @ts-ignore - pdfkit has no ESM types in many setups; we use runtime-only
-const mod = await import("pdfkit");
-const PDFDocument = (mod as any)?.default ?? (mod as any);
-
-let haveFontkit = false;
+/**
+* Load PDFKit with fonts embedded (standalone build), fall back to normal build if needed.
+* Try to attach fontkit (for TTF embedding) when available.
+*/
+async function loadPDF(): Promise<{ PDFDocument: any; fontkit: any | null }> {
+let mod: any;
+// 1) Prefer the standalone build (bundled fonts, no AFM I/O)
 try {
-// @ts-ignore - we intentionally avoid typings; runtime only
-const fkMod = await import("fontkit");
-const fontkit = (fkMod as any)?.default ?? (fkMod as any);
+// @ts-ignore – runtime import
+mod = await import("pdfkit/js/pdfkit.standalone.js");
+} catch {
+// 2) Fall back to normal build
+// @ts-ignore – runtime import
+mod = await import("pdfkit");
+}
+const PDFDocument = mod?.default ?? mod;
 
-// Some builds expose registerFontkit; in others we attach _fontkit
-if (typeof (PDFDocument as any).prototype.registerFontkit === "function") {
-(PDFDocument as any).prototype.registerFontkit(fontkit);
-} else {
-(PDFDocument as any).prototype.registerFontkit = function (fk: any) {
-(this as any)._fontkit = fk;
+// fontkit is optional — only needed if we embed a TTF
+let fk: any | null = null;
+try {
+// @ts-ignore – runtime import
+const fkMod = await import("fontkit");
+fk = fkMod?.default ?? fkMod;
+
+if (typeof PDFDocument.prototype.registerFontkit !== "function") {
+PDFDocument.prototype.registerFontkit = function (kit: any) {
+(this as any)._fontkit = kit;
 return this;
 };
-(PDFDocument as any).prototype.registerFontkit(fontkit);
 }
-haveFontkit = true;
 } catch {
-// No fontkit present at runtime; we'll handle this gracefully below.
-haveFontkit = false;
+fk = null;
 }
 
-return { PDFDocument, haveFontkit };
+return { PDFDocument, fontkit: fk };
 }
 
-/**
-* Try to load a TTF you ship with the app (recommended location):
-* public/fonts/Inter-Regular.ttf
-* You can replace with any other TTF you prefer.
-*/
-function loadBundledTTF(): Buffer | null {
-// Primary: Inter-Regular.ttf in public/fonts
+function loadInterTTF(): Buffer | null {
 const p1 = path.join(process.cwd(), "public", "fonts", "Inter-Regular.ttf");
 if (fs.existsSync(p1)) return fs.readFileSync(p1);
-
-// Secondary: Inter.ttf at project root /fonts (in case you put it there)
 const p2 = path.join(process.cwd(), "fonts", "Inter-Regular.ttf");
 if (fs.existsSync(p2)) return fs.readFileSync(p2);
-
 return null;
 }
 
-/**
-* Create invoice PDF as Buffer.
-* NOTE: We *never* throw for font issues. If we cannot load fontkit+TTF,
-* we still return a valid 1-page PDF (minimal text) so email always goes out.
-*/
-export async function createInvoicePdf(order: OrderEmail, brand: string): Promise<Buffer> {
-const { PDFDocument, haveFontkit } = await loadPDFStuff();
+/* ---------- main ---------- */
 
-// If fontkit is available, we embed a TTF and render the full invoice.
-// If not, we return a minimal PDF fallback to avoid breaking the email.
-const ttf = haveFontkit ? loadBundledTTF() : null;
+export async function createInvoicePdf(order: OrderEmail, brand: string): Promise<Buffer> {
+const { PDFDocument, fontkit } = await loadPDF();
 
 const doc: any = new PDFDocument({
 size: "A4",
@@ -96,38 +85,42 @@ bufferPages: true,
 pdfVersion: "1.3",
 });
 
+// Stream → Buffer
 const chunks: Buffer[] = [];
-const finished = new Promise<Buffer>((resolve, reject) => {
+const done = new Promise<Buffer>((resolve, reject) => {
 doc.on("data", (c: Buffer) => chunks.push(c));
 doc.on("error", reject);
 doc.on("end", () => resolve(Buffer.concat(chunks)));
 });
 
-// ===== Path A: Full invoice (fontkit + TTF available) =====
-if (haveFontkit && ttf) {
+// Try to embed Inter if available (optional)
 try {
+const ttf = loadInterTTF();
+if (fontkit && ttf) {
+doc.registerFontkit(fontkit);
 doc.registerFont("Body", ttf);
 doc.font("Body");
+}
+} catch {
+// ignore — the standalone build already has fonts so we’re fine
+}
 
-// Header
+try {
+/* ---------- Header ---------- */
 doc.fillColor("#0f172a").fontSize(18).text(`${brand} — Tax Invoice`, { align: "left" });
 doc.moveDown(0.25);
-doc
-.fontSize(10)
-.fillColor("#475569")
-.text(`Order ID: ${order.id}`)
-.text(`Date: ${fmtLK(order.createdAt)}`);
+doc.fontSize(10).fillColor("#475569").text(`Order ID: ${order.id}`).text(`Date: ${fmtLK(order.createdAt)}`);
 
 doc.moveDown(0.5);
 drawLine(doc);
 
-// Billing / Shipping
+/* ---------- Billing / Shipping ---------- */
 doc.moveDown(0.6);
 const startY = doc.y;
 const colW =
 (doc.page.width - doc.page.margins.left - doc.page.margins.right) / 2 - mm(4);
 
-doc.fontSize(11).fillColor("#0f172a").text("Billing", { continued: false });
+doc.fontSize(11).fillColor("#0f172a").text("Billing");
 doc
 .fontSize(10)
 .fillColor("#334155")
@@ -140,10 +133,7 @@ doc
 { width: colW }
 );
 
-doc
-.fontSize(11)
-.fillColor("#0f172a")
-.text("Shipping", doc.page.margins.left + colW + mm(8), startY);
+doc.fontSize(11).fillColor("#0f172a").text("Shipping", doc.page.margins.left + colW + mm(8), startY);
 
 if (order.customer.shipToDifferent) {
 const s = order.customer.shipToDifferent;
@@ -164,7 +154,7 @@ doc.fontSize(10).fillColor("#334155").text("Same as billing", { width: colW });
 doc.moveDown(0.6);
 drawLine(doc);
 
-// Payment
+/* ---------- Payment ---------- */
 doc.moveDown(0.6);
 doc.fontSize(11).fillColor("#0f172a").text("Payment");
 doc
@@ -187,7 +177,7 @@ width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
 doc.moveDown(0.6);
 drawLine(doc);
 
-// Items table
+/* ---------- Items ---------- */
 doc.moveDown(0.6);
 doc.fontSize(11).fillColor("#0f172a").text("Items");
 
@@ -227,7 +217,7 @@ y = nextY;
 doc.strokeColor("#f1f5f9").moveTo(col.item, y - mm(2)).lineTo(col.rightEdge, y - mm(2)).stroke();
 }
 
-// Totals
+/* ---------- Totals ---------- */
 doc.moveDown(1);
 const addRow = (label: string, value: string, bold = false) => {
 doc
@@ -247,7 +237,7 @@ addRow(`Discount${order.promoCode ? ` (${order.promoCode})` : ""}`, "-" + money(
 addRow("Shipping", order.freeShipping ? "Free" : money(order.shipping));
 addRow("Grand Total", money(order.total), true);
 
-// Footer
+/* ---------- Footer ---------- */
 doc.moveDown(1);
 drawLine(doc);
 doc
@@ -256,32 +246,16 @@ doc
 .text("Generated automatically by Manny.lk — thank you for your order.", { align: "center" });
 
 doc.end();
-return finished;
 } catch (err) {
-// fall through to minimal fallback
-}
-}
-
-// ===== Path B: Minimal fallback (no fontkit / no TTF) =====
-// We avoid any font switching that would trigger AFM lookups.
+// As a last resort, create a tiny valid PDF so email never breaks
 try {
-doc
-.fontSize(12)
-.text(`${brand} — Invoice`, { align: "left" })
-.moveDown(0.5)
-.fontSize(10)
-.text(`Order ID: ${order.id}`)
-.text(`Date: ${fmtLK(order.createdAt)}`)
-.moveDown(0.5)
-.text(`Total: ${money(order.total)}`);
-
-doc.end();
-} catch {
-// Last resort: ensure stream closes
+doc.addPage?.(); // no-op if already has one
+doc.fontSize(12).text(`${brand} — Invoice`).moveDown(0.5).text(`Order ID: ${order.id}`).text(`Total: ${money(order.total)}`);
+} catch {}
 try { doc.end(); } catch {}
 }
 
-return finished;
+return done;
 }
 
 function drawLine(doc: any) {
