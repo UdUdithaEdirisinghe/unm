@@ -25,6 +25,12 @@ currency: "LKR",
 maximumFractionDigits: 0,
 }).format(v);
 
+/** Use only PDF core fonts (no AFM files needed on disk) */
+const FONT = {
+REG: "Times-Roman",
+BOLD: "Times-Bold",
+} as const;
+
 /**
 * Create invoice PDF as Buffer (server-side only).
 * No site layout/colors are changed; this only affects the email attachment.
@@ -33,7 +39,7 @@ export async function createInvoicePdf(
 order: OrderEmail,
 brand: string
 ): Promise<Buffer> {
-const PDFDocument = await loadPDFKit(); // robust against ESM/CJS
+const PDFDocument = await loadPDFKit();
 const doc: any = new PDFDocument({
 size: "A4",
 margins: { top: mm(18), bottom: mm(18), left: mm(18), right: mm(18) },
@@ -41,11 +47,8 @@ bufferPages: true,
 pdfVersion: "1.3",
 });
 
-// 🔒 Force built-in core fonts (no .afm/.ttf lookups)
-const FONT = {
-REG: "Times-Roman",
-BOLD: "Times-Bold",
-};
+// IMPORTANT: select a core font BEFORE any text() so Helvetica is never touched
+doc.font(FONT.REG);
 
 const chunks: Buffer[] = [];
 return await new Promise<Buffer>((resolve, reject) => {
@@ -54,10 +57,10 @@ doc.on("error", reject);
 doc.on("end", () => resolve(Buffer.concat(chunks)));
 
 // ===== Header =====
-doc.font(FONT.BOLD).fillColor("#0f172a").fontSize(18).text(`${brand} — Tax Invoice`, { align: "left" });
+doc.fillColor("#0f172a").font(FONT.BOLD).fontSize(18).text(`${brand} — Tax Invoice`, { align: "left" });
+doc.font(FONT.REG);
 doc.moveDown(0.25);
 doc
-.font(FONT.REG)
 .fontSize(10)
 .fillColor("#475569")
 .text(`Order ID: ${order.id}`)
@@ -102,10 +105,10 @@ doc
 continued: false,
 });
 
+doc.font(FONT.REG);
 if (order.customer.shipToDifferent) {
 const s = order.customer.shipToDifferent;
 doc
-.font(FONT.REG)
 .fontSize(10)
 .fillColor("#334155")
 .text(
@@ -116,7 +119,7 @@ doc
 { width: colW }
 );
 } else {
-doc.font(FONT.REG).fontSize(10).fillColor("#334155").text("Same as billing", { width: colW });
+doc.fontSize(10).fillColor("#334155").text("Same as billing", { width: colW });
 }
 
 doc.moveDown(0.6);
@@ -179,17 +182,8 @@ const nextY = y + lineHeight;
 // Page break if needed
 if (nextY > doc.page.height - doc.page.margins.bottom - mm(40)) {
 doc.addPage();
+doc.font(FONT.REG); // re-assert font after page break
 y = doc.y = doc.page.margins.top;
-
-// re-draw table header on new page
-doc.font(FONT.REG).fontSize(10).fillColor("#334155");
-doc.text("Item", col.item, y, { width: mm(120) });
-doc.text("Qty", col.qty, y, { width: mm(20), align: "right" });
-doc.text("Price", col.price, y, { width: mm(25), align: "right" });
-doc.text("Total", col.total, y, { width: mm(25), align: "right" });
-y += mm(6);
-doc.strokeColor("#e5e7eb").moveTo(col.item, y).lineTo(col.rightEdge, y).stroke();
-doc.font(FONT.REG).fillColor("#0f172a");
 }
 
 doc.text(it.name, col.item, y, { width: mm(120) });
@@ -208,7 +202,6 @@ doc
 // ===== Totals =====
 doc.moveDown(1);
 const totalsX = col.total;
-const totalsW = mm(40);
 
 const addRow = (label: string, value: string, bold = false) => {
 doc
@@ -220,7 +213,7 @@ doc
 .font(bold ? FONT.BOLD : FONT.REG)
 .fontSize(bold ? 12 : 10)
 .fillColor("#0f172a")
-.text(value, totalsX, doc.y, { width: totalsW, align: "right" });
+.text(value, totalsX, doc.y, { width: mm(40), align: "right" });
 };
 
 addRow("Subtotal", money(order.subtotal));
