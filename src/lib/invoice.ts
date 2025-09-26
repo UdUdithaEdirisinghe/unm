@@ -3,7 +3,7 @@
 * Old-school, stamp-ready invoice PDF (no font files, no AFM lookups).
 * - ASCII-only content, Type1 Helvetica (base font) → works on Vercel serverless.
 * - Pixel-clean centering & right-alignment, robust wrapping.
-* - Big "Authorized Signature / Seal" panel (no notes).
+* - Signature/Seal box only (no notes).
 * - Meta box includes Payment method (COD/Direct Bank Transfer).
 */
 
@@ -24,7 +24,7 @@ const FONT = {
 body: "F1",
 size: { title: 22, normal: 11, small: 9 },
 avgChar(size: number) {
-return size * 0.48; // ~ Helvetica average glyph width
+return size * 0.48; // ~Helvetica average glyph width
 },
 };
 
@@ -272,21 +272,23 @@ y -= rowH;
 
 y -= 12;
 
-/* Totals (right column) */
+/* Totals (right column) — width matches signature box */
 const hasDiscount = !!(order.promoDiscount && order.promoDiscount > 0);
 const rows = 3 + (hasDiscount ? 1 : 0);
-const totalsH = rows * rowH;
-const totalsW = Math.max(230, Math.round(width * 0.42));
+const totalsRowH = rowH;
+const totalsH = rows * totalsRowH;
+const totalsW = 280; // fixed width → same as signature box
 const totalsX = right - totalsW;
+
 body += box(totalsX, y - totalsH, totalsW, totalsH);
 
 let ty = y - 14;
 body = totalsRow(body, totalsX, ty, totalsW, "Subtotal", money(order.subtotal));
-ty -= rowH;
+ty -= totalsRowH;
 if (hasDiscount) {
 const label = `Discount ${order.promoCode ? "(" + ascii(order.promoCode) + ")" : "(FD)"}`;
 body = totalsRow(body, totalsX, ty, totalsW, label, "-" + money(order.promoDiscount || 0));
-ty -= rowH;
+ty -= totalsRowH;
 }
 body = totalsRow(
 body,
@@ -296,27 +298,29 @@ totalsW,
 "Shipping",
 order.freeShipping ? "Free" : money(order.shipping)
 );
-ty -= rowH;
+ty -= totalsRowH;
 body = totalsRow(body, totalsX, ty, totalsW, "Grand Total", money(order.total), true);
-y -= totalsH + 18;
 
-/* Signature / Seal only */
-const sealW = 280;
-const sealH = 140;
-const sealX = right - sealW;
+y -= totalsH + 16;
+
+/* Signature / Seal — same width as totals, shorter height, label at lower middle */
+const sealW = totalsW; // match totals width
+const sealH = 110; // a bit smaller height than before
+const sealX = totalsX; // align right edges
 const sealTop = y - sealH;
+
 body += box(sealX, sealTop, sealW, sealH);
 
 const sigText = "Authorized Signature / Seal";
 const sigSize = FONT.size.normal;
 const sigWidth = sigText.length * FONT.avgChar(sigSize);
 const sigX = sealX + (sealW - sigWidth) / 2;
-const sigBaseline = sealTop + sealH * 0.35;
+const sigBaseline = sealTop + 16; // **lower** middle: ~16pt up from bottom edge
 body += BT(Math.max(sealX + 8, sigX), sigBaseline, sigSize) + T(sigText) + ET;
 
-y -= sealH + 20;
+y -= sealH + 22;
 
-/* Footer */
+/* Footer (centered) */
 const footer = `(c) ${new Date().getFullYear()} ${brand.name} - All rights reserved.`;
 const est = footer.length * FONT.avgChar(FONT.size.small);
 const fx = left + (width - est) / 2;
