@@ -1,15 +1,12 @@
 // src/lib/invoice.ts
 /**
-* Old-school, stamp-ready invoice PDF (zero external deps).
-* - Pure PDF assembly using built-in Helvetica (no fonts to load).
-* - Centered title, true right-aligned totals, no overlaps.
-* - Text wrapping within boxes so long lines never overflow.
-* - Footer kept minimal, header carries contact.
+* Old-school, stamp-ready invoice PDF.
+* - Pure PDF assembly w/ base Helvetica (no font files, no AFM reads).
+* - Accurate centering/right-alignment with simple width model.
+* - Wrapping in header/billing/shipping. Minimal ASCII-only footer.
 */
 
 import type { OrderEmail } from "./mail";
-
-/* --------------------------- brand & sizes --------------------------- */
 
 const BRAND = {
 name: "Manny.lk",
@@ -24,19 +21,12 @@ const MARGIN = 42;
 
 const FONT = {
 body: "F1",
-size: {
-title: 22,
-normal: 11,
-small: 9,
-},
-// very close average width per char for Helvetica in pt
-// (keeps our centering/right alignment visually accurate)
-avgChar(widthPt: number) {
-return widthPt * 0.48; // ~0.48 * fontSize per character
+size: { title: 22, normal: 11, small: 9 },
+avgChar(size: number) {
+// avg glyph width ~0.48em for Helvetica at common sizes
+return size * 0.48;
 },
 };
-
-/* ------------------------------ utils ------------------------------- */
 
 const money = (v: number) =>
 new Intl.NumberFormat("en-LK", {
@@ -91,36 +81,27 @@ out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\
 return Buffer.from(out, "utf8");
 }
 
-/** Wrap a string to fit a max width (points) at a given font size. */
-function wrapToWidth(text: string, maxWidthPt: number, fontSize: number): string[] {
+function wrapToWidth(text: string, maxWidthPt: number, size: number): string[] {
 const words = ascii(text).split(/\s+/).filter(Boolean);
-const perChar = FONT.avgChar(fontSize);
+const perChar = FONT.avgChar(size);
 const maxChars = Math.max(1, Math.floor(maxWidthPt / perChar));
-
 const lines: string[] = [];
 let cur = "";
 for (const w of words) {
 const cand = cur ? cur + " " + w : w;
-if (cand.length <= maxChars) {
-cur = cand;
-} else {
+if (cand.length <= maxChars) cur = cand;
+else {
 if (cur) lines.push(cur);
-// if single word too long, hard-split
 if (w.length > maxChars) {
-for (let i = 0; i < w.length; i += maxChars) {
-lines.push(w.slice(i, i + maxChars));
-}
+for (let i = 0; i < w.length; i += maxChars) lines.push(w.slice(i, i + maxChars));
 cur = "";
-} else {
-cur = w;
-}
+} else cur = w;
 }
 }
 if (cur) lines.push(cur);
 return lines;
 }
 
-/** Draw a label/value row inside totals panel with real right alignment. */
 function totalsRow(
 s: string,
 x: number,
@@ -132,13 +113,13 @@ bold = false
 ) {
 const size = bold ? 12 : FONT.size.normal;
 const valueWidth = (ascii(value).length || 1) * FONT.avgChar(size);
-const vx = x + w - 10 - valueWidth; // 10pt padding from right
+const vx = x + w - 10 - valueWidth;
 s += BT(x + 10, y, FONT.size.normal) + T(label) + ET;
 s += BT(Math.max(x + 10, vx), y, size) + T(value) + ET;
 return s;
 }
 
-/* ------------------------------ PDF body ---------------------------- */
+/* -------------------------------- PDF -------------------------------- */
 
 export async function createInvoicePdf(order: OrderEmail, brandName: string): Promise<Buffer> {
 const brand = { ...BRAND, name: brandName || BRAND.name };
@@ -154,14 +135,13 @@ const rowH = 20;
 let y = top;
 let body = "";
 
-/* ---------- Header band (brand + title box) ---------- */
+/* Header band */
 const headerH = 66;
-const titleW = 170; // fixed right box
+const titleW = 170;
 const titleX = right - titleW;
 body += box(left, y - headerH, width, headerH);
-body += line(titleX, y - headerH, titleX, y); // vertical divider for title box
+body += line(titleX, y - headerH, titleX, y);
 
-// brand block (wrap address if long)
 const brandPad = 12;
 const brandColW = width - titleW;
 const brandLineW = brandColW - brandPad * 2;
@@ -171,22 +151,24 @@ brand.name,
 ...wrapToWidth(brand.address, brandLineW, FONT.size.normal),
 `${brand.web} | ${brand.phone} | ${brand.email}`,
 ];
-
 body += BT(left + brandPad, y - 20, FONT.size.normal) + TL(lead);
 for (const ln of brandLines) body += T(ln) + TSTAR;
 body += ET;
 
-// centered “INVOICE” in the right box
+// PERFECT center for "INVOICE" inside right box
 const title = "INVOICE";
-const titleSize = FONT.size.title;
-const titleWidth = title.length * FONT.avgChar(titleSize);
-const titleXCenter = titleX + titleW / 2 - titleWidth / 2;
-const titleY = y - 28; // a touch under box midline for optical balance
-body += BT(Math.max(titleX + 10, titleXCenter), titleY, titleSize) + T(title) + ET;
+const ts = FONT.size.title;
+const tw = title.length * FONT.avgChar(ts);
+const tx = titleX + (titleW - tw) / 2; // horizontal center
+const boxTop = y - headerH;
+const boxMidY = boxTop + headerH / 2;
+// baseline so glyphs look optically centered vertically
+const baseline = boxMidY - ts * 0.32; // ~0.32 ascender tweak
+body += BT(Math.max(titleX + 6, tx), baseline, ts) + T(title) + ET;
 
 y -= headerH + 12;
 
-/* ---------- Order meta ---------- */
+/* Meta */
 const metaH = 44;
 body += box(left, y - metaH, width, metaH);
 body += BT(left + 12, y - 16, FONT.size.normal) + TL(lead);
@@ -195,128 +177,112 @@ body += ET;
 
 y -= metaH + 12;
 
-/* ---------- Billing & Shipping (wrapped) ---------- */
+/* Billing / Shipping */
 const gutter = 12;
 const colW = (width - gutter) / 2;
-const contentPad = 10;
+const pad = 10;
 const detailsH = 110;
 
-// billing box
+// Billing
 body += box(left, y - detailsH, colW, detailsH);
-const billX = left + contentPad;
 let yy = y - 18;
-body += BT(billX, yy, FONT.size.normal) + T("Billing") + ET;
+body += BT(left + pad, yy, FONT.size.normal) + T("Billing") + ET;
 yy -= 14;
-
 const billingLines = [
 `${ascii(order.customer.firstName)} ${ascii(order.customer.lastName)}`.trim(),
 ...wrapToWidth(
 `${ascii(order.customer.address)}, ${ascii(order.customer.city)}${
 order.customer.postal ? " " + ascii(order.customer.postal) : ""
 }`,
-colW - contentPad * 2,
+colW - pad * 2,
 FONT.size.normal
 ),
 ...(order.customer.phone ? [`Phone: ${ascii(order.customer.phone)}`] : []),
 `Email: ${ascii(order.customer.email)}`,
 ];
-
 for (const ln of billingLines) {
-body += BT(billX, yy, FONT.size.normal) + T(ln) + ET;
+body += BT(left + pad, yy, FONT.size.normal) + T(ln) + ET;
 yy -= 14;
 }
 
-// shipping box
+// Shipping
 const shipX = left + colW + gutter;
 body += box(shipX, y - detailsH, colW, detailsH);
 yy = y - 18;
-body += BT(shipX + contentPad, yy, FONT.size.normal) + T("Shipping") + ET;
+body += BT(shipX + pad, yy, FONT.size.normal) + T("Shipping") + ET;
 yy -= 14;
-
 if (order.customer.shipToDifferent) {
 const s = order.customer.shipToDifferent;
 const shipLines = [
 ascii(s.name || `${order.customer.firstName} ${order.customer.lastName}`),
 ...wrapToWidth(
 `${ascii(s.address)}, ${ascii(s.city)}${s.postal ? " " + ascii(s.postal) : ""}`,
-colW - contentPad * 2,
+colW - pad * 2,
 FONT.size.normal
 ),
 ...(s.phone ? [`Phone: ${ascii(s.phone)}`] : []),
 ];
 for (const ln of shipLines) {
-body += BT(shipX + contentPad, yy, FONT.size.normal) + T(ln) + ET;
+body += BT(shipX + pad, yy, FONT.size.normal) + T(ln) + ET;
 yy -= 14;
 }
 } else {
-body += BT(shipX + contentPad, yy, FONT.size.normal) + T("Same as billing") + ET;
+body += BT(shipX + pad, yy, FONT.size.normal) + T("Same as billing") + ET;
 }
 
 y -= detailsH + 14;
 
-/* ---------- Items table ---------- */
+/* Items table */
 const headH = 24;
-
-// column widths (sum must equal width)
 const descW = Math.round(width * 0.58);
 const qtyW = Math.round(width * 0.10);
 const priceW = Math.round(width * 0.14);
 const totalW = width - (descW + qtyW + priceW);
-
 const xDesc = left;
 const xQty = xDesc + descW;
 const xPrice = xQty + qtyW;
 const xTotal = xPrice + priceW;
 
-// header row
 body += box(left, y - headH, width, headH);
 body += line(xQty, y - headH, xQty, y);
 body += line(xPrice, y - headH, xPrice, y);
 body += line(xTotal, y - headH, xTotal, y);
-
 body += BT(xDesc + 8, y - 16, FONT.size.normal) + T("Item") + ET;
 body += BT(xQty + 8, y - 16, FONT.size.normal) + T("Qty") + ET;
 body += BT(xPrice + 8, y - 16, FONT.size.normal) + T("Price") + ET;
 body += BT(xTotal + 8, y - 16, FONT.size.normal) + T("Total") + ET;
-
 y -= headH;
 
-// rows
 for (const it of order.items) {
 body += box(left, y - rowH, width, rowH);
 body += line(xQty, y - rowH, xQty, y);
 body += line(xPrice, y - rowH, xPrice, y);
 body += line(xTotal, y - rowH, xTotal, y);
-
 body += BT(xDesc + 8, y - 13, FONT.size.normal) + T(ascii(it.name)) + ET;
 body += BT(xQty + 8, y - 13, FONT.size.normal) + T(String(it.quantity)) + ET;
 body += BT(xPrice + 8, y - 13, FONT.size.normal) + T(money(it.price)) + ET;
 body += BT(xTotal + 8, y - 13, FONT.size.normal) + T(money(it.price * it.quantity)) + ET;
-
 y -= rowH;
 }
 
 y -= 12;
 
-/* ---------- Totals panel (true right align, optional discount) ---------- */
+/* Totals */
 const hasDiscount = !!(order.promoDiscount && order.promoDiscount > 0);
 const rows = 3 + (hasDiscount ? 1 : 0);
 const totalsH = rows * rowH;
 const totalsW = Math.max(220, Math.round(width * 0.42));
 const totalsX = right - totalsW;
-
 body += box(totalsX, y - totalsH, totalsW, totalsH);
 
 let ty = y - 14;
 body = totalsRow(body, totalsX, ty, totalsW, "Subtotal", money(order.subtotal));
 ty -= rowH;
-
 if (hasDiscount) {
 const label = `Discount${order.promoCode ? " (" + ascii(order.promoCode) + ")" : ""}`;
 body = totalsRow(body, totalsX, ty, totalsW, label, "-" + money(order.promoDiscount || 0));
 ty -= rowH;
 }
-
 body = totalsRow(
 body,
 totalsX,
@@ -326,11 +292,10 @@ totalsW,
 order.freeShipping ? "Free" : money(order.shipping)
 );
 ty -= rowH;
-
 body = totalsRow(body, totalsX, ty, totalsW, "Grand Total", money(order.total), true);
 y -= totalsH + 16;
 
-/* ---------- Notes (optional) ---------- */
+/* Notes (optional) */
 if (order.customer.notes) {
 const notesW = totalsX - left - 16;
 const notesH = 66;
@@ -343,21 +308,28 @@ body += ET;
 y -= notesH + 16;
 }
 
-/* ---------- Signature / seal ---------- */
+/* Signature / Seal */
 const sealW = 190;
 const sealH = 70;
 const sealX = right - sealW;
-body += box(sealX, y - sealH, sealW, sealH);
-body += BT(sealX + 18, y - 22, FONT.size.normal) + T("Authorized Signature / Seal") + ET;
+const sealTop = y - sealH;
+body += box(sealX, sealTop, sealW, sealH);
 
-/* ---------- Footer (minimal, centered) ---------- */
-const footer = `(c) ${new Date().getFullYear()} ${brand.name} — All rights reserved.`;
+const sigText = "Authorized Signature / Seal";
+const sigSize = FONT.size.normal;
+const sigWidth = sigText.length * FONT.avgChar(sigSize);
+const sigX = sealX + (sealW - sigWidth) / 2;
+const sigBaseline = sealTop + sealH * 0.33; // lower-middle area
+body += BT(Math.max(sealX + 8, sigX), sigBaseline, sigSize) + T(sigText) + ET;
+
+/* Footer (ASCII, centered) */
+const footer = `(c) ${new Date().getFullYear()} ${brand.name} - All rights reserved.`;
 const est = footer.length * FONT.avgChar(FONT.size.small);
 const fx = left + (width - est) / 2;
 const fy = MARGIN + 18;
 body += BT(Math.max(left, fx), fy, FONT.size.small) + T(footer) + ET;
 
-/* ---------- Build PDF ---------- */
+/* Build PDF */
 const content = stream(body);
 const o1 = `<< /Type /Catalog /Pages 2 0 R >>\n`;
 const o2 = `<< /Type /Pages /Kids [3 0 R] /Count 1 >>\n`;
