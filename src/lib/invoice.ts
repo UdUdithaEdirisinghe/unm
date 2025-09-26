@@ -1,17 +1,17 @@
 // src/lib/invoice.ts
 /**
-* PDF invoice generator (attachment for admin email).
-* - Embeds a TTF via fontkit *if present* (falls back gracefully).
-* - Pulls logo from public/logo/manny-logo.png *if present*.
-* - No file I/O outside of fs.readFileSync for bundled assets (no AFM).
-* - Always returns a Buffer; if assets are missing we produce a minimal but valid PDF.
+* PDF invoice generator (server-friendly).
+* - Uses pdfkit's standalone build (no AFM file I/O -> no ENOENT).
+* - Optionally embeds Inter-Regular.ttf if available via fontkit.
+* - Optionally draws /public/logo/manny-logo.png if available.
+* - Always returns a Buffer (so the email attachment is reliable).
 */
 
 import type { OrderEmail } from "./mail";
 import fs from "fs";
 import path from "path";
 
-/* ---------- helpers ---------- */
+/* ----------------------------- helpers ----------------------------- */
 
 const mm = (v: number) => (v * 72) / 25.4;
 
@@ -29,16 +29,20 @@ timeStyle: "short",
 timeZone: "Asia/Colombo",
 }).format(new Date(iso));
 
+/** Import pdfkit (standalone) + fontkit safely */
 async function loadPDFStuff(): Promise<{ PDFDocument: any; fontkit: any | null }> {
-// @ts-ignore runtime import, types not required
-const mod = await import("pdfkit");
+// ⬇️ Standalone build has bundled standard fonts; no AFM reads on disk.
+// @ts-ignore
+const mod = await import("pdfkit/js/pdfkit.standalone.js");
 const PDFDocument = (mod as any)?.default ?? (mod as any);
 
 let fontkit: any | null = null;
 try {
-// @ts-ignore runtime import, types not required
+// @ts-ignore
 const fk = await import("fontkit");
 fontkit = (fk as any)?.default ?? (fk as any);
+
+// Ensure registerFontkit exists even if not provided
 if (typeof (PDFDocument as any).prototype.registerFontkit !== "function") {
 (PDFDocument as any).prototype.registerFontkit = function (fkAny: any) {
 (this as any)._fontkit = fkAny;
@@ -46,55 +50,56 @@ return this;
 };
 }
 } catch {
-fontkit = null; // fine, we’ll render without custom font
+fontkit = null;
 }
-
 return { PDFDocument, fontkit };
 }
 
-function loadInterTTF(): Buffer | null {
-const roots = [
-path.join(process.cwd(), "public", "fonts", "Inter-Regular.ttf"),
-path.join(process.cwd(), "fonts", "Inter-Regular.ttf"),
-];
-for (const p of roots) {
-if (fs.existsSync(p)) return fs.readFileSync(p);
-}
+function readIfExists(p: string): Buffer | null {
+try {
+return fs.existsSync(p) ? fs.readFileSync(p) : null;
+} catch {
 return null;
 }
-
-function loadLogo(): Buffer | null {
-const roots = [
-path.join(process.cwd(), "public", "logo", "manny-logo.png"),
-path.join(process.cwd(), "public", "logo.png"),
-];
-for (const p of roots) {
-if (fs.existsSync(p)) return fs.readFileSync(p);
-}
-return null;
 }
 
-function drawRule(doc: any, y?: number) {
+function drawRule(doc: any) {
 const left = doc.page.margins.left;
 const right = doc.page.width - doc.page.margins.right;
-const yy = typeof y === "number" ? y : doc.y;
-doc.strokeColor("#e5e7eb").moveTo(left, yy).lineTo(right, yy).stroke();
+doc
+.strokeColor("#e5e7eb")
+.moveTo(left, doc.y)
+.lineTo(right, doc.y)
+.stroke();
 }
 
-/* ---------- main ---------- */
+/* -------------------------- company details ------------------------- */
+/** You can override via env; sensible fallbacks included */
+function getCompany(brand: string) {
+const address =
+process.env.COMPANY_ADDRESS || "35/24, Udaperadeniya, Peradeniya";
+const phone = process.env.NEXT_PUBLIC_WHATSAPP_PHONE || "94760703523";
+const phonePretty = phone.replace(/^94/, "+94 ").replace(/(\d{2})(\d{3})(\d{4})$/, "$1 $2 $3");
+const email = process.env.MAIL_TO_CONTACT || "info@manny.lk";
+const website = process.env.NEXT_PUBLIC_SITE_URL || "https://www.manny.lk";
+return { brand, address, phone: phonePretty, email, website };
+}
+
+/* ---------------------------- main export --------------------------- */
 
 export async function createInvoicePdf(order: OrderEmail, brand: string): Promise<Buffer> {
 const { PDFDocument, fontkit } = await loadPDFStuff();
+const company = getCompany(brand);
 
 const doc: any = new PDFDocument({
 size: "A4",
-margins: { top: mm(18), right: mm(18), bottom: mm(18), left: mm(18) },
+margins: { top: mm(18), bottom: mm(18), left: mm(18), right: mm(18) },
 bufferPages: true,
 pdfVersion: "1.3",
 });
 
 const chunks: Buffer[] = [];
-const finished = new Promise<Buffer>((resolve, reject) => {
+const done = new Promise<Buffer>((resolve, reject) => {
 doc.on("data", (c: Buffer) => chunks.push(c));
 doc.on("error", reject);
 doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -102,103 +107,100 @@ doc.on("end", () => resolve(Buffer.concat(chunks)));
 
 /* ---------- fonts (optional) ---------- */
 try {
-const ttf = fontkit ? loadInterTTF() : null;
+const ttf = readIfExists(path.join(process.cwd(), "public", "fonts", "Inter-Regular.ttf"));
 if (fontkit && ttf) {
 doc.registerFontkit(fontkit);
 doc.registerFont("Body", ttf);
 doc.font("Body");
 }
 } catch {
-// ignore — we’ll just use built-in font
+// fine; built-in fonts from standalone build will be used
 }
 
-/* ---------- header (logo + company block) ---------- */
+/* ---------- header with logo + brand ---------- */
+const logoPng = readIfExists(path.join(process.cwd(), "public", "logo", "manny-logo.png"));
+const headerY = doc.y;
 
-const contactEmail = process.env.MAIL_TO_CONTACT || "info@manny.lk";
-const wa = (process.env.NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
-const displayPhone = wa ? `+${wa}`.replace(/^(\+\d{2})(\d{3})(\d{3})(\d+)/, "$1 $2 $3 $4") : "";
-const company = {
-name: brand || "Manny.lk",
-address: "35/24, Udaperadeniya, Peradeniya",
-phone: displayPhone || "+94 76 070 3523",
-email: contactEmail,
-website: "www.manny.lk",
-};
-
-const logo = loadLogo();
-const leftX = doc.page.margins.left;
-const rightX = doc.page.width - doc.page.margins.right;
-
-let cursorY = doc.y;
-
-if (logo) {
-// draw logo at ~28mm width (keeps sharp on A4)
-const logoW = mm(28);
-doc.image(logo, leftX, cursorY, { width: logoW });
-}
-
-// company text to the right of logo (or starting at left if no logo)
-const blockX = logo ? leftX + mm(34) : leftX;
-const headerTop = cursorY;
-
+if (logoPng) {
+// logo on left
+doc.image(logoPng, doc.page.margins.left, headerY, { width: mm(24) });
 doc
 .fillColor("#0f172a")
 .fontSize(18)
-.text(`${company.name}`, blockX, headerTop, { continued: false });
-
-doc.moveDown(0.2);
-doc
-.fontSize(9)
-.fillColor("#64748b")
-.text(company.address, blockX)
-.text(company.phone, blockX)
-.text(company.email, blockX)
-.text(company.website, blockX);
-
-// right aligned “Invoice” block
-doc
-.fontSize(16)
-.fillColor("#0f172a")
-.text("Invoice", rightX - mm(45), headerTop, { width: mm(45), align: "right" })
-.moveDown(0.1)
-.fontSize(9)
-.fillColor("#475569")
-.text(`Order ID: ${order.id}`, rightX - mm(45), doc.y, { width: mm(45), align: "right" })
-.text(`Date: ${fmtLK(order.createdAt)}`, rightX - mm(45), doc.y, {
-width: mm(45),
-align: "right",
+.text(`${company.brand}`, doc.page.margins.left + mm(30), headerY + mm(2), {
+width: mm(120),
 });
+doc
+.fontSize(11)
+.fillColor("#334155")
+.text("Invoice", doc.page.margins.left + mm(30), headerY + mm(11));
+} else {
+// text-only fallback
+doc.fillColor("#0f172a").fontSize(18).text(`${company.brand}`, { continued: false });
+doc.fontSize(11).fillColor("#334155").text("Invoice");
+}
 
-// move below header
-doc.moveTo(leftX, Math.max(doc.y, headerTop + mm(18)));
-drawRule(doc, doc.y + mm(4));
-doc.moveDown(1);
+// company contact block (right side)
+const rightX = doc.page.width - doc.page.margins.right - mm(70);
+const blkTop = headerY;
+doc
+.fontSize(9)
+.fillColor("#334155")
+.text(company.address, rightX, blkTop, { width: mm(70), align: "right" })
+.text(company.phone ? `Phone: ${company.phone}` : "", rightX, doc.y, { width: mm(70), align: "right" })
+.text(company.email, rightX, doc.y, { width: mm(70), align: "right" })
+.text(company.website, rightX, doc.y, { width: mm(70), align: "right" });
 
-/* ---------- billing / shipping / payment ---------- */
+doc.moveDown(0.8);
+drawRule(doc);
 
-const usableW = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-const colW = usableW / 2 - mm(4);
-const startY = doc.y + mm(2);
+/* ---------- order meta (two columns) ---------- */
+doc.moveDown(0.6);
+const metaY = doc.y;
+const colW = (doc.page.width - doc.page.margins.left - doc.page.margins.right) / 2 - mm(6);
 
-// Billing
-doc.fontSize(11).fillColor("#0f172a").text("Billing", leftX, startY);
+// left: order id + date
+doc
+.fontSize(10)
+.fillColor("#475569")
+.text(`Order ID: ${order.id}`, doc.page.margins.left, metaY, { width: colW })
+.text(`Date: ${fmtLK(order.createdAt)}`, doc.page.margins.left, doc.y, { width: colW });
+
+// right: payment method
+doc
+.fontSize(10)
+.fillColor("#475569")
+.text(
+`Payment: ${order.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}`,
+doc.page.margins.left + colW + mm(12),
+metaY,
+{ width: colW }
+);
+
+doc.moveDown(0.6);
+drawRule(doc);
+
+/* ---------- addresses ---------- */
+doc.moveDown(0.6);
+const addrTop = doc.y;
+
+doc.fontSize(11).fillColor("#0f172a").text("Billing", doc.page.margins.left, addrTop);
 doc
 .fontSize(10)
 .fillColor("#334155")
 .text(
 `${order.customer.firstName} ${order.customer.lastName}\n` +
-`${order.customer.address}\n` +
-`${order.customer.city}${order.customer.postal ? " " + order.customer.postal : ""}\n` +
+`${order.customer.address}, ${order.customer.city}${
+order.customer.postal ? " " + order.customer.postal : ""
+}\n` +
 `${order.customer.phone ? "Phone: " + order.customer.phone + "\n" : ""}` +
 `Email: ${order.customer.email}`,
-leftX,
+doc.page.margins.left,
 doc.y,
 { width: colW }
 );
 
-// Shipping + Payment
-const rightColX = leftX + colW + mm(8);
-doc.fontSize(11).fillColor("#0f172a").text("Shipping", rightColX, startY);
+doc.fontSize(11).fillColor("#0f172a").text("Shipping", doc.page.margins.left + colW + mm(12), addrTop);
 if (order.customer.shipToDifferent) {
 const s = order.customer.shipToDifferent;
 doc
@@ -206,125 +208,128 @@ doc
 .fillColor("#334155")
 .text(
 `${s.name || `${order.customer.firstName} ${order.customer.lastName}`}\n` +
-`${s.address}\n` +
-`${s.city}${s.postal ? " " + s.postal : ""}\n` +
+`${s.address}, ${s.city}${s.postal ? " " + s.postal : ""}\n` +
 `${s.phone ? "Phone: " + s.phone : ""}`,
-rightColX,
+doc.page.margins.left + colW + mm(12),
 doc.y,
 { width: colW }
 );
 } else {
-doc.fontSize(10).fillColor("#334155").text("Same as billing", rightColX, doc.y, { width: colW });
-}
-
-doc.moveDown(0.6);
-doc.fontSize(11).fillColor("#0f172a").text("Payment", rightColX, doc.y);
 doc
 .fontSize(10)
 .fillColor("#334155")
-.text(order.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery", rightColX);
-if (order.bankSlipUrl) {
-doc.fillColor("#2563eb").text("Bank slip", rightColX, doc.y, { link: order.bankSlipUrl, underline: true });
-doc.fillColor("#334155");
+.text("Same as billing", doc.page.margins.left + colW + mm(12), doc.y, { width: colW });
 }
 
-if (order.customer.notes) {
 doc.moveDown(0.6);
-doc.fontSize(11).fillColor("#0f172a").text("Order notes", leftX, doc.y);
-doc
-.fontSize(10)
-.fillColor("#334155")
-.text(order.customer.notes, leftX, doc.y, { width: usableW });
-}
+drawRule(doc);
 
-doc.moveDown(0.8);
-drawRule(doc, doc.y);
+/* ---------- items table ---------- */
 doc.moveDown(0.6);
-
-/* ---------- items table (fits A4 cleanly) ---------- */
-
-doc.fontSize(11).fillColor("#0f172a").text("Items", leftX, doc.y);
+doc.fontSize(11).fillColor("#0f172a").text("Items");
 
 const tableTop = doc.y + mm(2);
-const xItem = leftX;
-const xQty = leftX + mm(120); // ~120mm item column
-const xPrice = leftX + mm(150);
-const xTotal = leftX + mm(180);
-const rightEdge = doc.page.width - doc.page.margins.right;
+const col = {
+item: doc.page.margins.left,
+qty: doc.page.margins.left + mm(120),
+price: doc.page.margins.left + mm(150),
+total: doc.page.margins.left + mm(180),
+rightEdge: doc.page.width - doc.page.margins.right,
+};
 
-doc.fontSize(10).fillColor("#334155");
-doc.text("Item", xItem, tableTop, { width: mm(120) });
-doc.text("Qty", xQty, tableTop, { width: mm(20), align: "right" });
-doc.text("Price", xPrice, tableTop, { width: mm(25), align: "right" });
-doc.text("Total", xTotal, tableTop, { width: mm(25), align: "right" });
+// header row
+doc.fontSize(10).fillColor("#64748b");
+doc.text("Item", col.item, tableTop, { width: mm(120) });
+doc.text("Qty", col.qty, tableTop, { width: mm(20), align: "right" });
+doc.text("Price", col.price, tableTop, { width: mm(25), align: "right" });
+doc.text("Total", col.total, tableTop, { width: mm(25), align: "right" });
 
 let y = tableTop + mm(6);
-doc.strokeColor("#e5e7eb").moveTo(xItem, y).lineTo(rightEdge, y).stroke();
+doc.strokeColor("#e5e7eb").moveTo(col.item, y).lineTo(col.rightEdge, y).stroke();
 
 doc.fontSize(10).fillColor("#0f172a");
 const rowGap = mm(7);
 
 for (const it of order.items) {
 const nextY = y + rowGap;
-// page break
-if (nextY > doc.page.height - doc.page.margins.bottom - mm(45)) {
+if (nextY > doc.page.height - doc.page.margins.bottom - mm(50)) {
+// new page
 doc.addPage();
 y = doc.y = doc.page.margins.top;
-// re-draw header row after page break (simple version)
-doc.fontSize(10).fillColor("#334155");
-doc.text("Item", xItem, y, { width: mm(120) });
-doc.text("Qty", xQty, y, { width: mm(20), align: "right" });
-doc.text("Price", xPrice, y, { width: mm(25), align: "right" });
-doc.text("Total", xTotal, y, { width: mm(25), align: "right" });
+// repeat table header on new page
+doc.fontSize(10).fillColor("#64748b");
+doc.text("Item", col.item, y, { width: mm(120) });
+doc.text("Qty", col.qty, y, { width: mm(20), align: "right" });
+doc.text("Price", col.price, y, { width: mm(25), align: "right" });
+doc.text("Total", col.total, y, { width: mm(25), align: "right" });
 y += mm(6);
-doc.strokeColor("#e5e7eb").moveTo(xItem, y).lineTo(rightEdge, y).stroke();
+doc.strokeColor("#e5e7eb").moveTo(col.item, y).lineTo(col.rightEdge, y).stroke();
 doc.fontSize(10).fillColor("#0f172a");
 }
 
-doc.text(it.name, xItem, y + mm(1), { width: mm(120) });
-doc.text(String(it.quantity), xQty, y + mm(1), { width: mm(20), align: "right" });
-doc.text(money(it.price), xPrice, y + mm(1), { width: mm(25), align: "right" });
-doc.text(money(it.price * it.quantity), xTotal, y + mm(1), { width: mm(25), align: "right" });
+doc.text(it.name, col.item, y, { width: mm(120) });
+doc.text(String(it.quantity), col.qty, y, { width: mm(20), align: "right" });
+doc.text(money(it.price), col.price, y, { width: mm(25), align: "right" });
+doc.text(money(it.price * it.quantity), col.total, y, { width: mm(25), align: "right" });
 
 y = nextY;
-doc.strokeColor("#f1f5f9").moveTo(xItem, y - mm(1)).lineTo(rightEdge, y - mm(1)).stroke();
+doc
+.strokeColor("#f1f5f9")
+.moveTo(col.item, y - mm(2))
+.lineTo(col.rightEdge, y - mm(2))
+.stroke();
 }
 
-/* ---------- totals block ---------- */
-
+/* ---------- totals (right aligned) ---------- */
 doc.moveDown(1);
 
+const labelX = col.total - mm(50);
+const valueX = col.total;
+const valueW = mm(40);
+
 const addRow = (label: string, value: string, bold = false) => {
-doc
-.fontSize(10)
-.fillColor("#334155")
-.text(label, xTotal - mm(45), doc.y, { width: mm(40), align: "right" });
+const y0 = doc.y;
+doc.fontSize(10).fillColor("#334155").text(label, labelX, y0, { width: mm(45), align: "right" });
 doc
 .fontSize(bold ? 12 : 10)
 .fillColor("#0f172a")
-.text(value, xTotal, doc.y, { width: mm(40), align: "right" });
+.text(value, valueX, y0, { width: valueW, align: "right" });
 };
 
 addRow("Subtotal", money(order.subtotal));
 if (order.promoDiscount && order.promoDiscount > 0) {
-addRow(`Discount${order.promoCode ? ` (${order.promoCode})` : ""}`, "-" + money(order.promoDiscount));
+addRow(
+`Discount${order.promoCode ? ` (${order.promoCode})` : ""}`,
+"-" + money(order.promoDiscount)
+);
 }
 addRow("Shipping", order.freeShipping ? "Free" : money(order.shipping));
 addRow("Grand Total", money(order.total), true);
 
-/* ---------- footer (centered) ---------- */
+/* ---------- notes (optional) ---------- */
+if (order.customer.notes) {
+doc.moveDown(0.8);
+drawRule(doc);
+doc.moveDown(0.4);
+doc.fontSize(11).fillColor("#0f172a").text("Notes");
+doc.fontSize(10).fillColor("#334155").text(order.customer.notes, {
+width: col.rightEdge - doc.page.margins.left,
+});
+}
 
+/* ---------- footer (centered) ---------- */
 doc.moveDown(1);
-drawRule(doc, doc.y);
-doc.moveDown(0.6);
+drawRule(doc);
+
+const footerText = `© ${new Date().getFullYear()} ${company.brand} — All rights reserved.`;
 doc
 .fontSize(9)
 .fillColor("#64748b")
-.text(`© ${new Date().getFullYear()} ${company.name} — All rights reserved.`, leftX, doc.y, {
-width: usableW,
+.text(footerText, doc.page.margins.left, doc.y + mm(2), {
+width: col.rightEdge - doc.page.margins.left,
 align: "center",
 });
 
 doc.end();
-return finished;
+return done;
 }
