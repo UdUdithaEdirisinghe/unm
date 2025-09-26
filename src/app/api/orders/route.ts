@@ -1,4 +1,4 @@
-// Create order / List orders (admin)
+// src/app/api/orders/route.ts
 import { NextResponse } from "next/server";
 import sql, { toJson } from "../../../lib/db";
 import { getPromoByCode, isPromoActive, computePromoDiscount } from "../../../lib/promos";
@@ -268,7 +268,7 @@ export async function POST(req: Request) {
 
     const row = created[0];
 
-    // 6) Send emails (customer + admin) — AWAIT so Vercel doesn't freeze mid-send
+    // 6) Send emails (customer + admin-with-PDF)
     console.log("[orders] dispatching emails for", order_id);
     try {
       await sendOrderEmails({

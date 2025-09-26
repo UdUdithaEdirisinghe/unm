@@ -1,16 +1,16 @@
-// src/lib/mail.ts
 import nodemailer, { SendMailOptions } from "nodemailer";
+import PDFDocument from "pdfkit";
 
 const {
-  SMTP_HOST,
-  SMTP_PORT,
-  SMTP_USER,
-  SMTP_PASS,
-  MAIL_FROM,
-  MAIL_TO_ORDERS,
-  SITE_NAME,
-  MAIL_TO_CONTACT,
-  NEXT_PUBLIC_WHATSAPP_PHONE,
+SMTP_HOST,
+SMTP_PORT,
+SMTP_USER,
+SMTP_PASS,
+MAIL_FROM,
+MAIL_TO_ORDERS,
+SITE_NAME,
+MAIL_TO_CONTACT,
+NEXT_PUBLIC_WHATSAPP_PHONE,
 } = process.env;
 
 /* ----------------- types & helpers ----------------- */
@@ -18,210 +18,305 @@ const {
 type Line = { name: string; quantity: number; price: number; slug?: string };
 
 export type OrderEmail = {
-  id: string;
-  createdAt: string; // ISO string (DB/UTC is fine)
-  customer: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone?: string;
-    address: string;
-    city: string;
-    postal?: string;
-    notes?: string;
-    shipToDifferent?: {
-      name?: string;
-      phone?: string;
-      address: string;
-      city: string;
-      postal?: string;
-    };
-  };
-  items: Line[];
-  subtotal: number;
-  shipping: number;
-  total: number;
-  promoCode: string | null;
-  promoDiscount: number | null;
-  freeShipping: boolean;
-  paymentMethod: "COD" | "BANK";
-  bankSlipUrl?: string | null;
+id: string;
+createdAt: string; // ISO string (DB/UTC is fine)
+customer: {
+firstName: string;
+lastName: string;
+email: string;
+phone?: string;
+address: string;
+city: string;
+postal?: string;
+notes?: string;
+shipToDifferent?: {
+name?: string;
+phone?: string;
+address: string;
+city: string;
+postal?: string;
+};
+};
+items: Line[];
+subtotal: number;
+shipping: number;
+total: number;
+promoCode: string | null;
+promoDiscount: number | null;
+freeShipping: boolean;
+paymentMethod: "COD" | "BANK";
+bankSlipUrl?: string | null;
 };
 
 const money = (v: number) =>
-  new Intl.NumberFormat("en-LK", {
-    style: "currency",
-    currency: "LKR",
-    maximumFractionDigits: 0,
-  }).format(v);
+new Intl.NumberFormat("en-LK", {
+style: "currency",
+currency: "LKR",
+maximumFractionDigits: 0,
+}).format(v);
 
 const itemsTable = (items: Line[]) =>
-  items
-    .map(
-      (i) => `
-    <tr>
-      <td style="padding:8px 10px;border-bottom:1px solid #f1f5f9">${i.name}</td>
-      <td style="padding:8px 10px;text-align:center;border-bottom:1px solid #f1f5f9">${i.quantity}</td>
-      <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f1f5f9">${money(i.price)}</td>
-      <td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f1f5f9">${money(
-        i.price * i.quantity
-      )}</td>
-    </tr>
-  `
-    )
-    .join("");
+items
+.map(
+(i) => `
+<tr>
+<td style="padding:8px 10px;border-bottom:1px solid #f1f5f9">${i.name}</td>
+<td style="padding:8px 10px;text-align:center;border-bottom:1px solid #f1f5f9">${i.quantity}</td>
+<td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f1f5f9">${money(i.price)}</td>
+<td style="padding:8px 10px;text-align:right;border-bottom:1px solid #f1f5f9">${money(
+i.price * i.quantity
+)}</td>
+</tr>
+`
+)
+.join("");
 
 // Always render in Sri Lanka local time
 const LK_TZ = "Asia/Colombo";
 function fmtDate(d: string) {
-  return new Intl.DateTimeFormat("en-LK", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: LK_TZ,
-  }).format(new Date(d));
+return new Intl.DateTimeFormat("en-LK", {
+dateStyle: "medium",
+timeStyle: "short",
+timeZone: LK_TZ,
+}).format(new Date(d));
 }
 
 function escapeHtml(s: string) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+return s
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;")
+.replace(/'/g, "&#039;");
 }
 
 /* ----------------- customer email (orders) ----------------- */
 
 function renderCustomerEmail(o: OrderEmail) {
-  const brand = SITE_NAME || "Manny.lk";
-  const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
-  const wa = (NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
-  const waHref = wa ? `https://wa.me/${wa}` : null;
+const brand = SITE_NAME || "Manny.lk";
+const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
+const wa = (NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
+const waHref = wa ? `https://wa.me/${wa}` : null;
 
-  const shippingBlock = o.customer.shipToDifferent
-    ? `
-      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
-        <div style="font-weight:600;margin-bottom:6px">Shipping</div>
-        <div style="color:#334155;line-height:1.6">
-          ${o.customer.shipToDifferent.name ? o.customer.shipToDifferent.name + "<br/>" : ""}
-          ${o.customer.shipToDifferent.address}, ${o.customer.shipToDifferent.city}${
-        o.customer.shipToDifferent.postal ? " " + o.customer.shipToDifferent.postal : ""
-      }<br/>
-          ${o.customer.shipToDifferent.phone ? `Phone: ${o.customer.shipToDifferent.phone}` : ""}
-        </div>
-      </div>`
-    : "";
+const shippingBlock = o.customer.shipToDifferent
+? `
+<div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+<div style="font-weight:600;margin-bottom:6px">Shipping</div>
+<div style="color:#334155;line-height:1.6">
+${o.customer.shipToDifferent.name ? o.customer.shipToDifferent.name + "<br/>" : ""}
+${o.customer.shipToDifferent.address}, ${o.customer.shipToDifferent.city}${
+o.customer.shipToDifferent.postal ? " " + o.customer.shipToDifferent.postal : ""
+}<br/>
+${o.customer.shipToDifferent.phone ? `Phone: ${o.customer.shipToDifferent.phone}` : ""}
+</div>
+</div>`
+: "";
 
-  const notesBlock = o.customer.notes
-    ? `
-      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
-        <div style="font-weight:600;margin-bottom:6px">Order notes</div>
-        <div style="color:#334155;white-space:pre-wrap;line-height:1.6">
-          ${escapeHtml(o.customer.notes)}
-        </div>
-      </div>`
-    : "";
+const notesBlock = o.customer.notes
+? `
+<div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+<div style="font-weight:600;margin-bottom:6px">Order notes</div>
+<div style="color:#334155;white-space:pre-wrap;line-height:1.6">
+${escapeHtml(o.customer.notes)}
+</div>
+</div>`
+: "";
 
-  return `
-  <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f6f8fb;padding:24px;color:#0f172a">
-    <div style="max-width:640px;margin:0 auto">
+return `
+<div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f6f8fb;padding:24px;color:#0f172a">
+<div style="max-width:640px;margin:0 auto">
 
-      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
-        <h2 style="margin:0 0 6px;font-size:20px">Thank you for your order!</h2>
-        <p style="margin:0;color:#334155">
-          Your order <b>${o.id}</b> was received on ${fmtDate(o.createdAt)}.
-        </p>
-      </div>
+<div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+<h2 style="margin:0 0 6px;font-size:20px">Thank you for your order!</h2>
+<p style="margin:0;color:#334155">
+Your order <b>${o.id}</b> was received on ${fmtDate(o.createdAt)}.
+</p>
+</div>
 
-      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
-        <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse">
-          <thead>
-            <tr>
-              <th style="text-align:left;padding:10px;background:#f8fafc">Item</th>
-              <th style="text-align:center;padding:10px;background:#f8fafc">Qty</th>
-              <th style="text-align:right;padding:10px;background:#f8fafc">Price</th>
-              <th style="text-align:right;padding:10px;background:#f8fafc">Total</th>
-            </tr>
-          </thead>
-          <tbody>${itemsTable(o.items)}</tbody>
-        </table>
+<div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+<table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse">
+<thead>
+<tr>
+<th style="text-align:left;padding:10px;background:#f8fafc">Item</th>
+<th style="text-align:center;padding:10px;background:#f8fafc">Qty</th>
+<th style="text-align:right;padding:10px;background:#f8fafc">Price</th>
+<th style="text-align:right;padding:10px;background:#f8fafc">Total</th>
+</tr>
+</thead>
+<tbody>${itemsTable(o.items)}</tbody>
+</table>
 
-        <div style="margin-top:12px;text-align:right;color:#334155">
-          <div>Subtotal: <b>${money(o.subtotal)}</b></div>
-          ${o.promoDiscount ? `<div>Discount ${o.promoCode ? `(${o.promoCode})` : ""}: <b>-${money(o.promoDiscount)}</b></div>` : ""}
-          <div>Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b></div>
-          <div style="margin-top:8px;font-size:16px">Grand Total: <b>${money(o.total)}</b></div>
-        </div>
-      </div>
+<div style="margin-top:12px;text-align:right;color:#334155">
+<div>Subtotal: <b>${money(o.subtotal)}</b></div>
+${o.promoDiscount ? `<div>Discount ${o.promoCode ? `(${o.promoCode})` : ""}: <b>-${money(o.promoDiscount)}</b></div>` : ""}
+<div>Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b></div>
+<div style="margin-top:8px;font-size:16px">Grand Total: <b>${money(o.total)}</b></div>
+</div>
+</div>
 
-      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
-        <div style="font-weight:600;margin-bottom:6px">Billing</div>
-        <div style="color:#334155;line-height:1.6">
-          ${o.customer.firstName} ${o.customer.lastName}<br/>
-          ${o.customer.address}, ${o.customer.city}${o.customer.postal ? " " + o.customer.postal : ""}<br/>
-          ${o.customer.phone ? `Phone: ${o.customer.phone}<br/>` : ""}Email: ${o.customer.email}
-        </div>
-        <div style="margin-top:10px;color:#334155">
-          <b>Payment:</b> ${o.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}${o.bankSlipUrl ? ` — <a href="${o.bankSlipUrl}">Bank slip</a>` : ""}
-        </div>
-      </div>
+<div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+<div style="font-weight:600;margin-bottom:6px">Billing</div>
+<div style="color:#334155;line-height:1.6">
+${o.customer.firstName} ${o.customer.lastName}<br/>
+${o.customer.address}, ${o.customer.city}${o.customer.postal ? " " + o.customer.postal : ""}<br/>
+${o.customer.phone ? `Phone: ${o.customer.phone}<br/>` : ""}Email: ${o.customer.email}
+</div>
+<div style="margin-top:10px;color:#334155">
+<b>Payment:</b> ${o.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}${o.bankSlipUrl ? ` — <a href="${o.bankSlipUrl}">Bank slip</a>` : ""}
+</div>
+</div>
 
-      ${shippingBlock}
-      ${notesBlock}
+${shippingBlock}
+${notesBlock}
 
-      <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc">
-        <div style="font-weight:600;margin-bottom:6px">Need help?</div>
-        <div style="color:#334155;line-height:1.6">
-          If you have any questions, ${waHref ? `chat with us on <a href="${waHref}">WhatsApp</a>` : "chat with us on WhatsApp"} or email <a href="mailto:${contactEmail}">${contactEmail}</a>.
-        </div>
-      </div>
+<div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc">
+<div style="font-weight:600;margin-bottom:6px">Need help?</div>
+<div style="color:#334155;line-height:1.6">
+If you have any questions, ${waHref ? `chat with us on <a href="${waHref}">WhatsApp</a>` : "chat with us on WhatsApp"} or email <a href="mailto:${contactEmail}">${contactEmail}</a>.
+</div>
+</div>
 
-      <div style="text-align:center;color:#94a3b8;margin-top:16px;font-size:12px">
-        ©️ ${new Date().getFullYear()} ${brand}. All rights reserved.
-      </div>
+<div style="text-align:center;color:#94a3b8;margin-top:16px;font-size:12px">
+©️ ${new Date().getFullYear()} ${brand}. All rights reserved.
+</div>
 
-    </div>
-  </div>`;
+</div>
+</div>`;
 }
 
 /* ----------------- admin email (orders) ----------------- */
 
 function renderAdminEmail(o: OrderEmail) {
-  const shippingLine = o.customer.shipToDifferent
-    ? `<div><b>Ship to:</b> ${[
-        o.customer.shipToDifferent.name,
-        `${o.customer.shipToDifferent.address}, ${o.customer.shipToDifferent.city}${o.customer.shipToDifferent.postal ? " " + o.customer.shipToDifferent.postal : ""}`,
-        o.customer.shipToDifferent.phone ? `Phone: ${o.customer.shipToDifferent.phone}` : "",
-      ]
-        .filter(Boolean)
-        .join(" — ")}</div>`
-    : "";
+const shippingLine = o.customer.shipToDifferent
+? `<div><b>Ship to:</b> ${[
+o.customer.shipToDifferent.name,
+`${o.customer.shipToDifferent.address}, ${o.customer.shipToDifferent.city}${
+o.customer.shipToDifferent.postal ? " " + o.customer.shipToDifferent.postal : ""
+}`,
+o.customer.shipToDifferent.phone ? `Phone: ${o.customer.shipToDifferent.phone}` : "",
+]
+.filter(Boolean)
+.join(" — ")}</div>`
+: "";
 
-  const notesLine = o.customer.notes
-    ? `<div style="margin-top:6px"><b>Notes:</b> ${escapeHtml(o.customer.notes)}</div>`
-    : "";
+const notesLine = o.customer.notes
+? `<div style="margin-top:6px"><b>Notes:</b> ${escapeHtml(o.customer.notes)}</div>`
+: "";
 
-  return `
-  <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
-    <h2 style="margin:0 0 8px">New order received: ${o.id}</h2>
-    <div>Time: ${fmtDate(o.createdAt)}</div>
-    <div>Payment: ${o.paymentMethod}${o.bankSlipUrl ? ` — Slip: ${o.bankSlipUrl}` : ""}</div>
-    <div>Customer: ${o.customer.firstName} ${o.customer.lastName} — ${o.customer.email}${o.customer.phone ? " / " + o.customer.phone : ""}</div>
-    ${shippingLine}
-    ${notesLine}
-    <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0">
-      <thead>
-        <tr>
-          <th style="text-align:left;padding:8px;background:#f8fafc">Item</th>
-          <th style="text-align:center;padding:8px;background:#f8fafc">Qty</th>
-          <th style="text-align:right;padding:8px;background:#f8fafc">Price</th>
-          <th style="text-align:right;padding:8px;background:#f8fafc">Total</th>
-        </tr>
-      </thead>
-      <tbody>${itemsTable(o.items)}</tbody>
-    </table>
-    <div>Subtotal: <b>${money(o.subtotal)}</b> ${o.promoDiscount ? `| Discount: -${money(o.promoDiscount)} (${o.promoCode ?? "code"})` : ""} | Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b> | Grand: <b>${money(o.total)}</b></div>
-  </div>`;
+return `
+<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
+<h2 style="margin:0 0 8px">New order received: ${o.id}</h2>
+<div>Time: ${fmtDate(o.createdAt)}</div>
+<div>Payment: ${o.paymentMethod}${o.bankSlipUrl ? ` — Slip: ${o.bankSlipUrl}` : ""}</div>
+<div>Customer: ${o.customer.firstName} ${o.customer.lastName} — ${o.customer.email}${
+o.customer.phone ? " / " + o.customer.phone : ""
+}</div>
+${shippingLine}
+${notesLine}
+<table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0">
+<thead>
+<tr>
+<th style="text-align:left;padding:8px;background:#f8fafc">Item</th>
+<th style="text-align:center;padding:8px;background:#f8fafc">Qty</th>
+<th style="text-align:right;padding:8px;background:#f8fafc">Price</th>
+<th style="text-align:right;padding:8px;background:#f8fafc">Total</th>
+</tr>
+</thead>
+<tbody>${itemsTable(o.items)}</tbody>
+</table>
+<div>Subtotal: <b>${money(o.subtotal)}</b> ${
+o.promoDiscount ? `| Discount: -${money(o.promoDiscount)} (${o.promoCode ?? "code"})` : ""
+} | Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b> | Grand: <b>${money(o.total)}</b></div>
+</div>`;
+}
+
+/* ----------------- PDF invoice (admin attachment only) ----------------- */
+
+async function generateInvoicePDF(o: OrderEmail): Promise<Buffer> {
+const doc = new PDFDocument({ size: "A4", margin: 40 });
+const chunks: Buffer[] = [];
+return await new Promise<Buffer>((resolve, reject) => {
+doc.on("data", (c: Buffer) => chunks.push(c));
+doc.on("end", () => resolve(Buffer.concat(chunks)));
+doc.on("error", reject);
+
+const brand = SITE_NAME || "Manny.lk";
+
+// Header
+doc.fontSize(20).text(`${brand} — Invoice`, { align: "left" });
+doc.moveDown(0.5);
+doc.fontSize(10).text(`Order ID: ${o.id}`);
+doc.text(`Date: ${fmtDate(o.createdAt)}`);
+doc.moveDown();
+
+// Billing
+doc.fontSize(12).text("Bill To", { underline: true });
+doc.fontSize(10).text(`${o.customer.firstName} ${o.customer.lastName}`);
+doc.text(`${o.customer.address}, ${o.customer.city}${o.customer.postal ? " " + o.customer.postal : ""}`);
+if (o.customer.phone) doc.text(`Phone: ${o.customer.phone}`);
+doc.text(`Email: ${o.customer.email}`);
+doc.moveDown();
+
+// Table header
+doc.fontSize(12).text("Items", { underline: true });
+doc.moveDown(0.5);
+
+const left = 40, right = 555;
+const col1 = left; // item
+const col2 = 350; // qty
+const col3 = 420; // price
+const col4 = 490; // total
+
+doc.fontSize(10);
+doc.text("Item", col1, doc.y, { width: col2 - col1 - 10 });
+doc.text("Qty", col2, doc.y, { width: col3 - col2 - 10, align: "right" });
+doc.text("Price", col3, doc.y, { width: col4 - col3 - 10, align: "right" });
+doc.text("Total", col4, doc.y, { width: right - col4, align: "right" });
+doc.moveDown(0.2);
+doc.moveTo(left, doc.y).lineTo(right, doc.y).stroke();
+doc.moveDown(0.4);
+
+// Rows
+o.items.forEach((it) => {
+const lineTotal = it.price * it.quantity;
+const y = doc.y;
+doc.text(it.name, col1, y, { width: col2 - col1 - 10 });
+doc.text(String(it.quantity), col2, y, { width: col3 - col2 - 10, align: "right" });
+doc.text(money(it.price), col3, y, { width: col4 - col3 - 10, align: "right" });
+doc.text(money(lineTotal), col4, y, { width: right - col4, align: "right" });
+doc.moveDown(0.4);
+});
+
+doc.moveDown(0.2);
+doc.moveTo(left, doc.y).lineTo(right, doc.y).stroke();
+
+// Totals
+doc.moveDown(0.6);
+const totalsX = 360;
+doc.fontSize(10);
+doc.text("Subtotal:", totalsX, doc.y, { width: 120, align: "right" });
+doc.text(money(o.subtotal), 480, doc.y, { width: 80, align: "right" });
+doc.moveDown(0.2);
+
+if (o.promoDiscount && o.promoDiscount > 0) {
+doc.text(`Discount${o.promoCode ? ` (${o.promoCode})` : ""}:`, totalsX, doc.y, { width: 120, align: "right" });
+doc.text(`-${money(o.promoDiscount)}`, 480, doc.y, { width: 80, align: "right" });
+doc.moveDown(0.2);
+}
+
+doc.text("Shipping:", totalsX, doc.y, { width: 120, align: "right" });
+doc.text(o.freeShipping ? "Free" : money(o.shipping), 480, doc.y, { width: 80, align: "right" });
+doc.moveDown(0.4);
+
+doc.fontSize(12).text("Grand Total:", totalsX, doc.y, { width: 120, align: "right" });
+doc.fontSize(12).text(money(o.total), 480, doc.y, { width: 80, align: "right" });
+doc.moveDown();
+
+// Footer
+doc.fontSize(9).text("Thank you for your order!", { align: "center" });
+
+doc.end();
+});
 }
 
 /* ----------------- transport (verify + fallback) ----------------- */
@@ -229,271 +324,293 @@ function renderAdminEmail(o: OrderEmail) {
 let cached: nodemailer.Transporter | null = null;
 
 async function makeTransport(host: string, port: number, secure: boolean) {
-  const t = nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-    authMethod: "LOGIN",
-    requireTLS: !secure,
-    logger: true,
-    debug: true,
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout: 20_000,
-    tls: secure ? undefined : { rejectUnauthorized: true },
-  });
-  await t.verify();
-  return t;
+const t = nodemailer.createTransport({
+host,
+port,
+secure,
+auth: { user: SMTP_USER, pass: SMTP_PASS },
+authMethod: "LOGIN",
+requireTLS: !secure,
+logger: true,
+debug: true,
+connectionTimeout: 15_000,
+greetingTimeout: 15_000,
+socketTimeout: 20_000,
+tls: secure ? undefined : { rejectUnauthorized: true },
+});
+await t.verify();
+return t;
 }
 
 async function getTransporter(): Promise<nodemailer.Transporter> {
-  if (cached) return cached;
-  const host = SMTP_HOST || "smtp.zoho.com";
-  const wantPort = Number(SMTP_PORT || 587);
-  const wantSecure = wantPort === 465;
+if (cached) return cached;
+const host = SMTP_HOST || "smtp.zoho.com";
+const wantPort = Number(SMTP_PORT || 587);
+const wantSecure = wantPort === 465;
 
-  try {
-    console.log(`[mail] trying SMTP ${host}:${wantPort} secure=${wantSecure}`);
-    cached = await makeTransport(host, wantPort, wantSecure);
-    console.log("[mail] SMTP verify OK on desired port");
-    return cached;
-  } catch (e1: any) {
-    console.error("[mail] primary SMTP failed:", e1?.message || e1);
-    const altPort = wantPort === 465 ? 587 : 465;
-    const altSecure = altPort === 465;
-    console.log(`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`);
-    cached = await makeTransport(host, altPort, altSecure);
-    console.log("[mail] SMTP verify OK on fallback port");
-    return cached;
-  }
+try {
+console.log(`[mail] trying SMTP ${host}:${wantPort} secure=${wantSecure}`);
+cached = await makeTransport(host, wantPort, wantSecure);
+console.log("[mail] SMTP verify OK on desired port");
+return cached;
+} catch (e1: any) {
+console.error("[mail] primary SMTP failed:", e1?.message || e1);
+const altPort = wantPort === 465 ? 587 : 465;
+const altSecure = altPort === 465;
+console.log(
+`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`
+);
+cached = await makeTransport(host, altPort, altSecure);
+console.log("[mail] SMTP verify OK on fallback port");
+return cached;
+}
 }
 
 async function reallySend(opts: SendMailOptions) {
-  const t = await getTransporter();
-  const info = await t.sendMail(opts);
-  console.log("[mail] sent:", {
-    messageId: info.messageId,
-    response: info.response,
-    to: opts.to,
-    subject: opts.subject,
-  });
-  return info;
+const t = await getTransporter();
+const info = await t.sendMail(opts);
+console.log("[mail] sent:", {
+messageId: info.messageId,
+response: info.response,
+to: opts.to,
+subject: opts.subject,
+});
+return info;
 }
 
 /* ----------------- public API (orders) ----------------- */
 
 export async function sendOrderEmails(order: OrderEmail) {
-  const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
-  const fromHeader =
-    MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
-      ? MAIL_FROM
-      : fallbackFrom;
+const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
+const fromHeader =
+MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
+? MAIL_FROM
+: fallbackFrom;
 
-  try {
-    await reallySend({
-      from: fromHeader,
-      to: order.customer.email,
-      subject: `Order Confirmation — ${order.id}`,
-      html: renderCustomerEmail(order),
-    });
-  } catch (err: any) {
-    console.error("[mail] customer email failed:", err?.message || err);
-  }
+// 1) Customer email — unchanged
+try {
+await reallySend({
+from: fromHeader,
+to: order.customer.email,
+subject: `Order Confirmation — ${order.id}`,
+html: renderCustomerEmail(order),
+});
+} catch (err: any) {
+console.error("[mail] customer email failed:", err?.message || err);
+}
 
-  try {
-    await reallySend({
-      from: fromHeader,
-      to: MAIL_TO_ORDERS || SMTP_USER,
-      subject: `New Order — ${order.id} — ${order.customer.firstName} ${order.customer.lastName}`,
-      html: renderAdminEmail(order),
-    });
-  } catch (err: any) {
-    console.error("[mail] admin email failed:", err?.message || err);
-  }
+// 2) Admin email — same HTML plus PDF invoice attachment
+try {
+const pdfBuffer = await generateInvoicePDF(order);
+await reallySend({
+from: fromHeader,
+to: MAIL_TO_ORDERS || SMTP_USER,
+subject: `New Order — ${order.id} — ${order.customer.firstName} ${order.customer.lastName}`,
+html: renderAdminEmail(order),
+attachments: [
+{
+filename: `Invoice-${order.id}.pdf`,
+content: pdfBuffer,
+contentType: "application/pdf",
+},
+],
+});
+} catch (err: any) {
+console.error("[mail] admin email failed:", err?.message || err);
+}
 }
 
 /* ----------------- contact email (admin notify + customer reply) ----------------- */
 
 type ContactPayload = {
-  name: string;
-  email: string;
-  // your current form doesn’t send phone, but we keep it optional for future
-  phone?: string;
-  subject?: string;
-  message: string;
+name: string;
+email: string;
+// your current form doesn’t send phone, but we keep it optional for future
+phone?: string;
+subject?: string;
+message: string;
 };
 
 /**
- * Sends the internal notification to your team (to MAIL_TO_CONTACT),
- * when a customer submits the contact form on the website.
- * Keeps neutral palette & DM-safe colors. Includes a “Reply to customer” button.
- */
+* Sends the internal notification to your team (to MAIL_TO_CONTACT),
+* when a customer submits the contact form on the website.
+* Keeps neutral palette & DM-safe colors. Includes a “Reply to customer” button.
+*/
 export async function sendContactEmail(payload: ContactPayload) {
-  const to = MAIL_TO_CONTACT || "info@manny.lk";
-  const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
-  const fromHeader =
-    MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
-      ? MAIL_FROM
-      : fallbackFrom;
+const to = MAIL_TO_CONTACT || "info@manny.lk";
+const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
+const fromHeader =
+MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
+? MAIL_FROM
+: fallbackFrom;
 
-  const brand = SITE_NAME || "Manny.lk";
-  // Gmail/iOS dark mode–resistant neutrals
-  const primary = "#111827";  // near-slate-900
-  const subText = "#4b5563";  // slate-600
-  const border  = "#e5e7eb";  // slate-200
-  const bg      = "#ffffff";  // white background to avoid auto-inversion
+const brand = SITE_NAME || "Manny.lk";
+// Gmail/iOS dark mode–resistant neutrals
+const primary = "#111827"; // near-slate-900
+const subText = "#4b5563"; // slate-600
+const border = "#e5e7eb"; // slate-200
+const bg = "#ffffff"; // white background to avoid auto-inversion
 
-  const safe = (s: string | undefined) =>
-    (s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+const safe = (s: string | undefined) =>
+(s ?? "")
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;")
+.replace(/'/g, "&#039;");
 
-  const html = `
-  <div style="margin:0;padding:24px;background:${bg};color:${primary};font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
-    <div style="max-width:640px;margin:0 auto;">
-      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:16px;">
-        <h2 style="margin:0 0 6px;font-size:20px;color:${primary};">New website inquiry</h2>
-        <div style="margin:0;color:${subText};">${brand}</div>
-      </div>
+const html = `
+<div style="margin:0;padding:24px;background:${bg};color:${primary};font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
+<div style="max-width:640px;margin:0 auto;">
+<div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:16px;">
+<h2 style="margin:0 0 6px;font-size:20px;color:${primary};">New website inquiry</h2>
+<div style="margin:0;color:${subText};">${brand}</div>
+</div>
 
-      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
-        <div style="font-weight:600;margin-bottom:6px;color:${primary};">From</div>
-        <div style="color:${subText};">${safe(payload.name) || "-"}</div>
-        <div style="margin-top:2px;">
-          <a href="mailto:${safe(payload.email)}" style="text-decoration:none;color:#2563eb;">${safe(payload.email) || "-"}</a>
-        </div>
-        <div style="margin-top:8px;">
-          <a href="mailto:${safe(payload.email)}?subject=Re:%20${encodeURIComponent(
-            payload.subject || "Your message to " + brand
-          )}"
-             style="display:inline-block;padding:8px 10px;border:1px solid ${border};border-radius:8px;text-decoration:none;color:#2563eb;">
-            Reply to customer
-          </a>
-        </div>
-      </div>
+<div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
+<div style="font-weight:600;margin-bottom:6px;color:${primary};">From</div>
+<div style="color:${subText};">${safe(payload.name) || "-"}</div>
+<div style="margin-top:2px;">
+<a href="mailto:${safe(payload.email)}" style="text-decoration:none;color:#2563eb;">${
+safe(payload.email) || "-"
+}</a>
+</div>
+<div style="margin-top:8px;">
+<a href="mailto:${safe(payload.email)}?subject=Re:%20${encodeURIComponent(
+payload.subject || "Your message to " + brand
+)}"
+style="display:inline-block;padding:8px 10px;border:1px solid ${border};border-radius:8px;text-decoration:none;color:#2563eb;">
+Reply to customer
+</a>
+</div>
+</div>
 
-      ${payload.subject ? `
-      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
-        <div style="font-weight:600;margin-bottom:6px;color:${primary};">Subject</div>
-        <div style="color:${subText};">${safe(payload.subject)}</div>
-      </div>` : ""}
+${
+payload.subject
+? `
+<div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
+<div style="font-weight:600;margin-bottom:6px;color:${primary};">Subject</div>
+<div style="color:${subText};">${safe(payload.subject)}</div>
+</div>`
+: ""
+}
 
-      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};">
-        <div style="font-weight:600;margin-bottom:6px;color:${primary};">Message</div>
-        <div style="white-space:pre-wrap;color:${primary};">${safe(payload.message)}</div>
-      </div>
+<div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};">
+<div style="font-weight:600;margin-bottom:6px;color:${primary};">Message</div>
+<div style="white-space:pre-wrap;color:${primary};">${safe(payload.message)}</div>
+</div>
 
-      <div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">
-        © ${new Date().getFullYear()} ${brand}. All rights reserved.
-      </div>
-    </div>
-  </div>`;
+<div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">
+©️ ${new Date().getFullYear()} ${brand}. All rights reserved.
+</div>
+</div>
+</div>`;
 
-  try {
-    const t = await getTransporter();
-    await t.sendMail({
-      from: fromHeader,
-      to,
-      replyTo: payload.email, // one-click reply path to the customer
-      subject: `[Contact] ${payload.subject || "Message"} — ${payload.name || "Customer"}`,
-      html,
-    });
-    console.log("[contact] sent to", to);
-  } catch (err: any) {
-    console.error("[contact] send failed:", err?.message || err);
-    throw err;
-  }
+try {
+const t = await getTransporter();
+await t.sendMail({
+from: fromHeader,
+to,
+replyTo: payload.email, // one-click reply path to the customer
+subject: `[Contact] ${payload.subject || "Message"} — ${
+payload.name || "Customer"
+}`,
+html,
+});
+console.log("[contact] sent to", to);
+} catch (err: any) {
+console.error("[contact] send failed:", err?.message || err);
+throw err;
+}
 }
 
 /* ---------- Customer reply email (what your team sends back) ---------- */
 
 type ContactReplyPayload = {
-  customer: ContactPayload;    // includes name, email, subject?, message (original)
-  replyMessage: string;        // what your team wrote
+customer: ContactPayload; // includes name, email, subject?, message (original)
+replyMessage: string; // what your team wrote
 };
 
 /**
- * Sends a nicely formatted reply to the customer.
- * Subject: “Thank you for your message — Manny.lk Support”
- * Body shows your reply first, then the customer’s original message, plus help footer.
- * Uses the same safe neutral palette you liked (order email vibe).
- */
+* Sends a nicely formatted reply to the customer.
+* Subject: “Thank you for your message — Manny.lk Support”
+* Body shows your reply first, then the customer’s original message, plus help footer.
+* Uses the same safe neutral palette you liked (order email vibe).
+*/
 function renderContactReplyEmail(p: ContactReplyPayload) {
-  const brand = SITE_NAME || "Manny.lk";
-  const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
-  const wa = (NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
-  const waHref = wa ? `https://wa.me/${wa}` : null;
+const brand = SITE_NAME || "Manny.lk";
+const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
+const wa = (NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
+const waHref = wa ? `https://wa.me/${wa}` : null;
 
-  const primary = "#111827";  // dark text
-  const subText = "#4b5563";  // muted text
-  const border  = "#e5e7eb";  // light gray
-  const bg      = "#ffffff";  // white background
+const primary = "#111827"; // dark text
+const subText = "#4b5563"; // muted text
+const border = "#e5e7eb"; // light gray
+const bg = "#ffffff"; // white background
 
-  const safe = (s: string | undefined) =>
-    (s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+const safe = (s: string | undefined) =>
+(s ?? "")
+.replace(/&/g, "&amp;")
+.replace(/</g, "&lt;")
+.replace(/>/g, "&gt;")
+.replace(/"/g, "&quot;")
+.replace(/'/g, "&#039;");
 
-  return `
-  <div style="margin:0;padding:24px;background:${bg};color:${primary};font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
-    <div style="max-width:640px;margin:0 auto;">
+return `
+<div style="margin:0;padding:24px;background:${bg};color:${primary};font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
+<div style="max-width:640px;margin:0 auto;">
 
-      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:16px;">
-        <h2 style="margin:0 0 6px;font-size:20px;color:${primary};">Here’s your response from ${brand}</h2>
-      </div>
+<div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:16px;">
+<h2 style="margin:0 0 6px;font-size:20px;color:${primary};">Here’s your response from ${brand}</h2>
+</div>
 
-      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
-        <div style="font-weight:600;margin-bottom:6px;color:${primary};">Our reply</div>
-        <div style="white-space:pre-wrap;color:${primary};">${safe(p.replyMessage)}</div>
-      </div>
+<div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
+<div style="font-weight:600;margin-bottom:6px;color:${primary};">Our reply</div>
+<div style="white-space:pre-wrap;color:${primary};">${safe(p.replyMessage)}</div>
+</div>
 
-      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
-        <div style="font-weight:600;margin-bottom:6px;color:${primary};">Your original message</div>
-        ${p.customer.subject ? `<div style="color:${subText};margin-bottom:6px;"><b>Subject:</b> ${safe(p.customer.subject)}</div>` : ""}
-        <div style="white-space:pre-wrap;color:${subText};">${safe(p.customer.message)}</div>
-      </div>
+<div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
+<div style="font-weight:600;margin-bottom:6px;color:${primary};">Your original message</div>
+${p.customer.subject ? `<div style="color:${subText};margin-bottom:6px;"><b>Subject:</b> ${safe(p.customer.subject)}</div>` : ""}
+<div style="white-space:pre-wrap;color:${subText};">${safe(p.customer.message)}</div>
+</div>
 
-      <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:#f8fafc;">
-        <div style="font-weight:600;margin-bottom:6px;color:${primary};">Need more help?</div>
-        <div style="color:${subText};">
-          Just reply to this email and it will reach us directly.${waHref ? ` Or message us on <a href="${waHref}" style="text-decoration:none;color:#2563eb;">WhatsApp</a>.` : ""}
-        </div>
-      </div>
+<div style="padding:16px;border:1px solid ${border};border-radius:10px;background:#f8fafc;">
+<div style="font-weight:600;margin-bottom:6px;color:${primary};">Need more help?</div>
+<div style="color:${subText};">
+Just reply to this email and it will reach us directly.${
+waHref ? ` Or message us on <a href="${waHref}" style="text-decoration:none;color:#2563eb;">WhatsApp</a>.` : ""
+}
+</div>
+</div>
 
-      <div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">
-        © ${new Date().getFullYear()} ${brand}. All rights reserved · <a href="mailto:${contactEmail}" style="text-decoration:none;color:#2563eb;">${contactEmail}</a>
-      </div>
+<div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">
+©️ ${new Date().getFullYear()} ${brand}. All rights reserved · <a href="mailto:${contactEmail}" style="text-decoration:none;color:#2563eb;">${contactEmail}</a>
+</div>
 
-    </div>
-  </div>`;
+</div>
+</div>`;
 }
 
 export async function sendContactReplyEmail(p: ContactReplyPayload) {
-  const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
-  const fromHeader =
-    MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
-      ? MAIL_FROM
-      : fallbackFrom;
+const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
+const fromHeader =
+MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(SMTP_USER.toLowerCase())
+? MAIL_FROM
+: fallbackFrom;
 
-  try {
-    const t = await getTransporter();
-    await t.sendMail({
-      from: fromHeader,
-      to: p.customer.email,
-      replyTo: MAIL_TO_CONTACT || "info@manny.lk",
-      subject: `Thank you for your message — ${SITE_NAME || "Manny.lk"} Support`,
-      html: renderContactReplyEmail(p),
-    });
-    console.log("[contact reply] sent to", p.customer.email);
-  } catch (err: any) {
-    console.error("[contact reply] send failed:", err?.message || err);
-    throw err;
-  }
+try {
+const t = await getTransporter();
+await t.sendMail({
+from: fromHeader,
+to: p.customer.email,
+replyTo: MAIL_TO_CONTACT || "info@manny.lk",
+subject: `Thank you for your message — ${SITE_NAME || "Manny.lk"} Support`,
+html: renderContactReplyEmail(p),
+});
+console.log("[contact reply] sent to", p.customer.email);
+} catch (err: any) {
+console.error("[contact reply] send failed:", err?.message || err);
+throw err;
+}
 }
