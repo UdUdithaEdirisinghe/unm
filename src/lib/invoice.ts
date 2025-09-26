@@ -1,19 +1,21 @@
 // src/lib/invoice.ts
-/*
-Minimal PDF invoice generator for admin attachment.
-- No file I/O (safe for serverless)
-- No external fonts required
-- Returns Buffer
+/**
+* Minimal PDF invoice generator for the admin attachment.
+* - No file I/O, no custom fonts (avoids ENOENT)
+* - Works with both CJS and ESM builds of pdfkit
+* - Returns Buffer for nodemailer attachment
 */
-
-// PDFKit is CJS; import as require to keep TS happy without extra typings.
-/* eslint-disable @typescript-eslint/no-var-requires */
-const PDFDocument = require("pdfkit");
-/* eslint-enable @typescript-eslint/no-var-requires */
 
 import type { OrderEmail } from "./mail";
 
-/** mm → points helper (A4 is 595.28 x 841.89 pt) */
+/** Lazy-load pdfkit in an ESM/CJS-safe way */
+async function loadPDFKit(): Promise<any> {
+// Next.js/Node can resolve pdfkit as either default export or module export
+const mod: any = await import("pdfkit");
+return mod?.default ?? mod;
+}
+
+/** mm → points helper (A4 is ~595.28 × 841.89 pt) */
 const mm = (v: number) => (v * 72) / 25.4;
 
 /** Currency (LKR, 0 decimals) */
@@ -25,14 +27,14 @@ maximumFractionDigits: 0,
 }).format(v);
 
 /**
-* Create a single-page (or multi-page if items overflow) invoice PDF.
-* No fonts or files are loaded from disk to avoid ENOENT on serverless.
+* Create invoice PDF as Buffer (server-side only).
+* No layout/colors on site are changed; this only affects the email attachment.
 */
 export async function createInvoicePdf(
 order: OrderEmail,
 brand: string
 ): Promise<Buffer> {
-// Type PDFDocument as any to avoid depending on @types/pdfkit
+const PDFDocument = await loadPDFKit(); // <- robust against ESM/CJS
 const doc: any = new PDFDocument({
 size: "A4",
 margins: { top: mm(18), bottom: mm(18), left: mm(18), right: mm(18) },
@@ -47,11 +49,7 @@ doc.on("error", reject);
 doc.on("end", () => resolve(Buffer.concat(chunks)));
 
 // ===== Header =====
-doc
-.fillColor("#0f172a")
-.fontSize(18)
-.text(`${brand} — Tax Invoice`, { align: "left" });
-
+doc.fillColor("#0f172a").fontSize(18).text(`${brand} — Tax Invoice`, { align: "left" });
 doc.moveDown(0.25);
 doc
 .fontSize(10)
@@ -71,13 +69,11 @@ drawLine(doc);
 // ===== Addresses / Payment =====
 doc.moveDown(0.6);
 const startY = doc.y;
-const colW = (doc.page.width - doc.page.margins.left - doc.page.margins.right) / 2 - mm(4);
+const colW =
+(doc.page.width - doc.page.margins.left - doc.page.margins.right) / 2 - mm(4);
 
 // Billing
-doc
-.fontSize(11)
-.fillColor("#0f172a")
-.text("Billing", { continued: false });
+doc.fontSize(11).fillColor("#0f172a").text("Billing", { continued: false });
 doc
 .fontSize(10)
 .fillColor("#334155")
@@ -94,7 +90,10 @@ doc
 doc
 .fontSize(11)
 .fillColor("#0f172a")
-.text("Shipping", doc.page.margins.left + colW + mm(8), startY, { continued: false });
+.text("Shipping", doc.page.margins.left + colW + mm(8), startY, {
+continued: false,
+});
+
 if (order.customer.shipToDifferent) {
 const s = order.customer.shipToDifferent;
 doc
@@ -122,9 +121,7 @@ doc
 .fillColor("#334155")
 .text(order.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery");
 if (order.bankSlipUrl) {
-doc
-.fillColor("#2563eb")
-.text("Bank slip", { link: order.bankSlipUrl, underline: true });
+doc.fillColor("#2563eb").text("Bank slip", { link: order.bankSlipUrl, underline: true });
 doc.fillColor("#334155");
 }
 
@@ -220,10 +217,9 @@ drawLine(doc);
 doc
 .fontSize(9)
 .fillColor("#64748b")
-.text(
-"Generated automatically by Manny.lk — thank you for your order.",
-{ align: "center" }
-);
+.text("Generated automatically by Manny.lk — thank you for your order.", {
+align: "center",
+});
 
 doc.end();
 });
@@ -232,9 +228,5 @@ doc.end();
 function drawLine(doc: any) {
 const left = doc.page.margins.left;
 const right = doc.page.width - doc.page.margins.right;
-doc
-.strokeColor("#e5e7eb")
-.moveTo(left, doc.y)
-.lineTo(right, doc.y)
-.stroke();
+doc.strokeColor("#e5e7eb").moveTo(left, doc.y).lineTo(right, doc.y).stroke();
 }
