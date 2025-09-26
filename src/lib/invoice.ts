@@ -1,163 +1,240 @@
 // src/lib/invoice.ts
-import PDFDocument from "pdfkit";
-import fs from "node:fs";
-import path from "node:path";
-import { formatCurrency } from "./format";
+/*
+Minimal PDF invoice generator for admin attachment.
+- No file I/O (safe for serverless)
+- No external fonts required
+- Returns Buffer
+*/
 
-export type InvoiceItem = {
-  name: string;
-  quantity: number;
-  unitPrice: number;
-  total: number;
+// PDFKit is CJS; import as require to keep TS happy without extra typings.
+/* eslint-disable @typescript-eslint/no-var-requires */
+const PDFDocument = require("pdfkit");
+/* eslint-enable @typescript-eslint/no-var-requires */
+
+import type { OrderEmail } from "./mail";
+
+/** mm → points helper (A4 is 595.28 x 841.89 pt) */
+const mm = (v: number) => (v * 72) / 25.4;
+
+/** Currency (LKR, 0 decimals) */
+const money = (v: number) =>
+new Intl.NumberFormat("en-LK", {
+style: "currency",
+currency: "LKR",
+maximumFractionDigits: 0,
+}).format(v);
+
+/**
+* Create a single-page (or multi-page if items overflow) invoice PDF.
+* No fonts or files are loaded from disk to avoid ENOENT on serverless.
+*/
+export async function createInvoicePdf(
+order: OrderEmail,
+brand: string
+): Promise<Buffer> {
+// Type PDFDocument as any to avoid depending on @types/pdfkit
+const doc: any = new PDFDocument({
+size: "A4",
+margins: { top: mm(18), bottom: mm(18), left: mm(18), right: mm(18) },
+bufferPages: true,
+pdfVersion: "1.3",
+});
+
+const chunks: Buffer[] = [];
+return await new Promise<Buffer>((resolve, reject) => {
+doc.on("data", (c: Buffer) => chunks.push(c));
+doc.on("error", reject);
+doc.on("end", () => resolve(Buffer.concat(chunks)));
+
+// ===== Header =====
+doc
+.fillColor("#0f172a")
+.fontSize(18)
+.text(`${brand} — Tax Invoice`, { align: "left" });
+
+doc.moveDown(0.25);
+doc
+.fontSize(10)
+.fillColor("#475569")
+.text(`Order ID: ${order.id}`)
+.text(
+`Date: ${new Intl.DateTimeFormat("en-LK", {
+dateStyle: "medium",
+timeStyle: "short",
+timeZone: "Asia/Colombo",
+}).format(new Date(order.createdAt))}`
+);
+
+doc.moveDown(0.5);
+drawLine(doc);
+
+// ===== Addresses / Payment =====
+doc.moveDown(0.6);
+const startY = doc.y;
+const colW = (doc.page.width - doc.page.margins.left - doc.page.margins.right) / 2 - mm(4);
+
+// Billing
+doc
+.fontSize(11)
+.fillColor("#0f172a")
+.text("Billing", { continued: false });
+doc
+.fontSize(10)
+.fillColor("#334155")
+.text(
+`${order.customer.firstName} ${order.customer.lastName}\n` +
+`${order.customer.address}\n` +
+`${order.customer.city}${order.customer.postal ? " " + order.customer.postal : ""}\n` +
+`${order.customer.phone ? "Phone: " + order.customer.phone + "\n" : ""}` +
+`Email: ${order.customer.email}`,
+{ width: colW }
+);
+
+// Shipping (if different)
+doc
+.fontSize(11)
+.fillColor("#0f172a")
+.text("Shipping", doc.page.margins.left + colW + mm(8), startY, { continued: false });
+if (order.customer.shipToDifferent) {
+const s = order.customer.shipToDifferent;
+doc
+.fontSize(10)
+.fillColor("#334155")
+.text(
+`${s.name || `${order.customer.firstName} ${order.customer.lastName}`}\n` +
+`${s.address}\n` +
+`${s.city}${s.postal ? " " + s.postal : ""}\n` +
+`${s.phone ? "Phone: " + s.phone : ""}`,
+{ width: colW }
+);
+} else {
+doc.fontSize(10).fillColor("#334155").text("Same as billing", { width: colW });
+}
+
+doc.moveDown(0.6);
+drawLine(doc);
+
+// ===== Payment summary =====
+doc.moveDown(0.6);
+doc.fontSize(11).fillColor("#0f172a").text("Payment");
+doc
+.fontSize(10)
+.fillColor("#334155")
+.text(order.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery");
+if (order.bankSlipUrl) {
+doc
+.fillColor("#2563eb")
+.text("Bank slip", { link: order.bankSlipUrl, underline: true });
+doc.fillColor("#334155");
+}
+
+if (order.customer.notes) {
+doc.moveDown(0.4);
+doc.fontSize(11).fillColor("#0f172a").text("Order notes");
+doc.fontSize(10).fillColor("#334155").text(order.customer.notes, {
+width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+});
+}
+
+doc.moveDown(0.6);
+drawLine(doc);
+
+// ===== Items table =====
+doc.moveDown(0.6);
+doc.fontSize(11).fillColor("#0f172a").text("Items");
+
+const tableTop = doc.y + mm(2);
+const col = {
+item: doc.page.margins.left,
+qty: doc.page.margins.left + mm(120),
+price: doc.page.margins.left + mm(150),
+total: doc.page.margins.left + mm(180),
+rightEdge: doc.page.width - doc.page.margins.right,
 };
 
-export type InvoiceData = {
-  orderId: string;
-  createdAt: string; // ISO
-  items: InvoiceItem[];
-  subtotal: number;
-  shipping: number;
-  discount: number;
-  total: number;
-  paymentMethod: "COD" | "BANK";
-  promoCode?: string | null;
-  customer: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone?: string;
-    address: string;
-    city: string;
-    postal?: string;
-  };
-  shipDifferent?: boolean;
-  shippingAddress?: {
-    name?: string;
-    firstName?: string;
-    lastName?: string;
-    phone?: string;
-    address: string;
-    city: string;
-    postal?: string;
-  };
+// Header row
+doc.fontSize(10).fillColor("#334155");
+doc.text("Item", col.item, tableTop, { width: mm(120) });
+doc.text("Qty", col.qty, tableTop, { width: mm(20), align: "right" });
+doc.text("Price", col.price, tableTop, { width: mm(25), align: "right" });
+doc.text("Total", col.total, tableTop, { width: mm(25), align: "right" });
+
+const rowGap = mm(7);
+let y = tableTop + mm(6);
+
+doc.strokeColor("#e5e7eb").moveTo(col.item, y).lineTo(col.rightEdge, y).stroke();
+
+doc.fontSize(10).fillColor("#0f172a");
+for (const it of order.items) {
+const lineHeight = rowGap;
+const nextY = y + lineHeight;
+
+// Page break if needed
+if (nextY > doc.page.height - doc.page.margins.bottom - mm(40)) {
+doc.addPage();
+y = doc.y = doc.page.margins.top;
+}
+
+doc.text(it.name, col.item, y, { width: mm(120) });
+doc.text(String(it.quantity), col.qty, y, { width: mm(20), align: "right" });
+doc.text(money(it.price), col.price, y, { width: mm(25), align: "right" });
+doc.text(money(it.price * it.quantity), col.total, y, { width: mm(25), align: "right" });
+
+y = nextY;
+doc
+.strokeColor("#f1f5f9")
+.moveTo(col.item, y - mm(2))
+.lineTo(col.rightEdge, y - mm(2))
+.stroke();
+}
+
+// ===== Totals =====
+doc.moveDown(1);
+const totalsX = col.total;
+const totalsW = mm(40);
+
+const addRow = (label: string, value: string, bold = false) => {
+doc
+.fontSize(10)
+.fillColor("#334155")
+.text(label, totalsX - mm(45), doc.y, { width: mm(40), align: "right" });
+doc
+.fontSize(bold ? 12 : 10)
+.fillColor("#0f172a")
+.text(value, totalsX, doc.y, { width: totalsW, align: "right" });
 };
 
-/** Generate a PDF invoice as a Buffer (server-side only). */
-export async function generateInvoicePdf(data: InvoiceData): Promise<Buffer> {
-  const doc = new PDFDocument({ size: "A4", margin: 48 });
+addRow("Subtotal", money(order.subtotal));
+if (order.promoDiscount && order.promoDiscount > 0) {
+addRow(
+`Discount${order.promoCode ? ` (${order.promoCode})` : ""}`,
+"-" + money(order.promoDiscount)
+);
+}
+addRow("Shipping", order.freeShipping ? "Free" : money(order.shipping));
+addRow("Grand Total", money(order.total), true);
 
-  const chunks: Buffer[] = [];
-  doc.on("data", (c: Buffer) => chunks.push(c));     // <-- typed
-  const done = new Promise<Buffer>((resolve) =>
-    doc.on("end", () => resolve(Buffer.concat(chunks)))
-  );
+// ===== Footer =====
+doc.moveDown(1);
+drawLine(doc);
+doc
+.fontSize(9)
+.fillColor("#64748b")
+.text(
+"Generated automatically by Manny.lk — thank you for your order.",
+{ align: "center" }
+);
 
-  // Optional logo
-  try {
-    const logoPath = path.join(process.cwd(), "public", "logo", "manny-logo.png");
-    if (fs.existsSync(logoPath)) doc.image(logoPath, 48, 36, { width: 120 });
-  } catch {
-    /* ignore logo errors */
-  }
+doc.end();
+});
+}
 
-  // Header
-  doc
-    .fontSize(20)
-    .text("INVOICE", { align: "right" })
-    .moveDown(0.5)
-    .fontSize(10)
-    .text(
-      `Order ID: ${data.orderId}`,
-      { align: "right" }
-    )
-    .text(
-      `Date: ${new Date(data.createdAt).toLocaleString("en-LK", { timeZone: "Asia/Colombo" })}`,
-      { align: "right" }
-    )
-    .moveDown(1.2);
-
-  // Bill To
-  const bill = data.customer;
-  doc
-    .fontSize(12)
-    .text("Bill To", { underline: true })
-    .moveDown(0.5)
-    .fontSize(10)
-    .text(`${bill.firstName} ${bill.lastName}`)
-    .text(bill.address)
-    .text(`${bill.city}${bill.postal ? " " + bill.postal : ""}`)
-    .text(`Phone: ${bill.phone ?? "-"}`)
-    .text(`Email: ${bill.email}`);
-
-  // Ship To (if any)
-  if (data.shipDifferent && data.shippingAddress) {
-    const s = data.shippingAddress;
-    const name = s.name || [s.firstName, s.lastName].filter(Boolean).join(" ");
-    doc
-      .moveUp(5.1)
-      .text(" ", 300)
-      .fontSize(12)
-      .text("Ship To", 300, doc.y, { underline: true })
-      .moveDown(0.5)
-      .fontSize(10)
-      .text(name || "-", 300)
-      .text(s.address, 300)
-      .text(`${s.city}${s.postal ? " " + s.postal : ""}`, 300)
-      .text(`Phone: ${s.phone || "-"}`, 300);
-  }
-
-  doc.moveDown(1.2);
-
-  // Table header
-  const yStart = doc.y;
-  doc
-    .fontSize(11)
-    .text("Item", 48, yStart)
-    .text("Qty", 300, yStart, { width: 40, align: "right" })
-    .text("Unit", 350, yStart, { width: 80, align: "right" })
-    .text("Total", 440, yStart, { width: 100, align: "right" });
-  doc.moveTo(48, doc.y + 4).lineTo(545, doc.y + 4).stroke();
-
-  // Rows
-  doc.moveDown(0.5).fontSize(10);
-  data.items.forEach((it) => {
-    const y = doc.y;
-    doc
-      .text(it.name, 48, y, { width: 240 })
-      .text(String(it.quantity), 300, y, { width: 40, align: "right" })
-      .text(formatCurrency(it.unitPrice), 350, y, { width: 80, align: "right" })
-      .text(formatCurrency(it.total), 440, y, { width: 100, align: "right" })
-      .moveDown(0.2);
-  });
-
-  doc.moveDown(1);
-  doc.moveTo(350, doc.y).lineTo(545, doc.y).stroke();
-
-  // Totals
-  const line = (label: string, value: string, bold = false) => {
-    doc
-      .font(bold ? "Helvetica-Bold" : "Helvetica")
-      .text(label, 350, doc.y, { width: 120, align: "right" })
-      .text(value, 470, doc.y, { width: 70, align: "right" })
-      .font("Helvetica");
-  };
-
-  doc.moveDown(0.4);
-  line("Subtotal", formatCurrency(data.subtotal));
-  if (data.discount > 0) line("Discount", "-" + formatCurrency(data.discount));
-  line("Shipping", data.shipping === 0 ? "Free" : formatCurrency(data.shipping));
-  doc.moveDown(0.2);
-  doc.moveTo(350, doc.y).lineTo(545, doc.y).stroke();
-  doc.moveDown(0.2);
-  line("Total", formatCurrency(data.total), true);
-
-  doc.moveDown(1);
-  doc.fontSize(10).text(`Payment Method: ${data.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}`);
-  if (data.promoCode) doc.text(`Promo Code: ${data.promoCode}`);
-
-  doc.moveDown(1);
-  doc.fontSize(9).fillColor("#555").text("Thank you for your order!", { align: "center" });
-
-  doc.end();
-  return done;
+function drawLine(doc: any) {
+const left = doc.page.margins.left;
+const right = doc.page.width - doc.page.margins.right;
+doc
+.strokeColor("#e5e7eb")
+.moveTo(left, doc.y)
+.lineTo(right, doc.y)
+.stroke();
 }
