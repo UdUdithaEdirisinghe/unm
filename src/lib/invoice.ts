@@ -10,7 +10,6 @@ import type { OrderEmail } from "./mail";
 
 /** Lazy-load pdfkit in an ESM/CJS-safe way */
 async function loadPDFKit(): Promise<any> {
-// Next.js/Node can resolve pdfkit as either default export or module export
 const mod: any = await import("pdfkit");
 return mod?.default ?? mod;
 }
@@ -28,19 +27,25 @@ maximumFractionDigits: 0,
 
 /**
 * Create invoice PDF as Buffer (server-side only).
-* No layout/colors on site are changed; this only affects the email attachment.
+* No site layout/colors are changed; this only affects the email attachment.
 */
 export async function createInvoicePdf(
 order: OrderEmail,
 brand: string
 ): Promise<Buffer> {
-const PDFDocument = await loadPDFKit(); // <- robust against ESM/CJS
+const PDFDocument = await loadPDFKit(); // robust against ESM/CJS
 const doc: any = new PDFDocument({
 size: "A4",
 margins: { top: mm(18), bottom: mm(18), left: mm(18), right: mm(18) },
 bufferPages: true,
 pdfVersion: "1.3",
 });
+
+// 🔒 Force built-in core fonts (no .afm/.ttf lookups)
+const FONT = {
+REG: "Times-Roman",
+BOLD: "Times-Bold",
+};
 
 const chunks: Buffer[] = [];
 return await new Promise<Buffer>((resolve, reject) => {
@@ -49,9 +54,10 @@ doc.on("error", reject);
 doc.on("end", () => resolve(Buffer.concat(chunks)));
 
 // ===== Header =====
-doc.fillColor("#0f172a").fontSize(18).text(`${brand} — Tax Invoice`, { align: "left" });
+doc.font(FONT.BOLD).fillColor("#0f172a").fontSize(18).text(`${brand} — Tax Invoice`, { align: "left" });
 doc.moveDown(0.25);
 doc
+.font(FONT.REG)
 .fontSize(10)
 .fillColor("#475569")
 .text(`Order ID: ${order.id}`)
@@ -73,8 +79,9 @@ const colW =
 (doc.page.width - doc.page.margins.left - doc.page.margins.right) / 2 - mm(4);
 
 // Billing
-doc.fontSize(11).fillColor("#0f172a").text("Billing", { continued: false });
+doc.font(FONT.BOLD).fontSize(11).fillColor("#0f172a").text("Billing", { continued: false });
 doc
+.font(FONT.REG)
 .fontSize(10)
 .fillColor("#334155")
 .text(
@@ -88,6 +95,7 @@ doc
 
 // Shipping (if different)
 doc
+.font(FONT.BOLD)
 .fontSize(11)
 .fillColor("#0f172a")
 .text("Shipping", doc.page.margins.left + colW + mm(8), startY, {
@@ -97,6 +105,7 @@ continued: false,
 if (order.customer.shipToDifferent) {
 const s = order.customer.shipToDifferent;
 doc
+.font(FONT.REG)
 .fontSize(10)
 .fillColor("#334155")
 .text(
@@ -107,7 +116,7 @@ doc
 { width: colW }
 );
 } else {
-doc.fontSize(10).fillColor("#334155").text("Same as billing", { width: colW });
+doc.font(FONT.REG).fontSize(10).fillColor("#334155").text("Same as billing", { width: colW });
 }
 
 doc.moveDown(0.6);
@@ -115,8 +124,9 @@ drawLine(doc);
 
 // ===== Payment summary =====
 doc.moveDown(0.6);
-doc.fontSize(11).fillColor("#0f172a").text("Payment");
+doc.font(FONT.BOLD).fontSize(11).fillColor("#0f172a").text("Payment");
 doc
+.font(FONT.REG)
 .fontSize(10)
 .fillColor("#334155")
 .text(order.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery");
@@ -127,8 +137,8 @@ doc.fillColor("#334155");
 
 if (order.customer.notes) {
 doc.moveDown(0.4);
-doc.fontSize(11).fillColor("#0f172a").text("Order notes");
-doc.fontSize(10).fillColor("#334155").text(order.customer.notes, {
+doc.font(FONT.BOLD).fontSize(11).fillColor("#0f172a").text("Order notes");
+doc.font(FONT.REG).fontSize(10).fillColor("#334155").text(order.customer.notes, {
 width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
 });
 }
@@ -138,7 +148,7 @@ drawLine(doc);
 
 // ===== Items table =====
 doc.moveDown(0.6);
-doc.fontSize(11).fillColor("#0f172a").text("Items");
+doc.font(FONT.BOLD).fontSize(11).fillColor("#0f172a").text("Items");
 
 const tableTop = doc.y + mm(2);
 const col = {
@@ -150,7 +160,7 @@ rightEdge: doc.page.width - doc.page.margins.right,
 };
 
 // Header row
-doc.fontSize(10).fillColor("#334155");
+doc.font(FONT.REG).fontSize(10).fillColor("#334155");
 doc.text("Item", col.item, tableTop, { width: mm(120) });
 doc.text("Qty", col.qty, tableTop, { width: mm(20), align: "right" });
 doc.text("Price", col.price, tableTop, { width: mm(25), align: "right" });
@@ -161,7 +171,7 @@ let y = tableTop + mm(6);
 
 doc.strokeColor("#e5e7eb").moveTo(col.item, y).lineTo(col.rightEdge, y).stroke();
 
-doc.fontSize(10).fillColor("#0f172a");
+doc.font(FONT.REG).fontSize(10).fillColor("#0f172a");
 for (const it of order.items) {
 const lineHeight = rowGap;
 const nextY = y + lineHeight;
@@ -170,6 +180,16 @@ const nextY = y + lineHeight;
 if (nextY > doc.page.height - doc.page.margins.bottom - mm(40)) {
 doc.addPage();
 y = doc.y = doc.page.margins.top;
+
+// re-draw table header on new page
+doc.font(FONT.REG).fontSize(10).fillColor("#334155");
+doc.text("Item", col.item, y, { width: mm(120) });
+doc.text("Qty", col.qty, y, { width: mm(20), align: "right" });
+doc.text("Price", col.price, y, { width: mm(25), align: "right" });
+doc.text("Total", col.total, y, { width: mm(25), align: "right" });
+y += mm(6);
+doc.strokeColor("#e5e7eb").moveTo(col.item, y).lineTo(col.rightEdge, y).stroke();
+doc.font(FONT.REG).fillColor("#0f172a");
 }
 
 doc.text(it.name, col.item, y, { width: mm(120) });
@@ -192,10 +212,12 @@ const totalsW = mm(40);
 
 const addRow = (label: string, value: string, bold = false) => {
 doc
+.font(FONT.REG)
 .fontSize(10)
 .fillColor("#334155")
 .text(label, totalsX - mm(45), doc.y, { width: mm(40), align: "right" });
 doc
+.font(bold ? FONT.BOLD : FONT.REG)
 .fontSize(bold ? 12 : 10)
 .fillColor("#0f172a")
 .text(value, totalsX, doc.y, { width: totalsW, align: "right" });
@@ -215,6 +237,7 @@ addRow("Grand Total", money(order.total), true);
 doc.moveDown(1);
 drawLine(doc);
 doc
+.font(FONT.REG)
 .fontSize(9)
 .fillColor("#64748b")
 .text("Generated automatically by Manny.lk — thank you for your order.", {
