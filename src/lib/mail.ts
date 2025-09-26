@@ -1,7 +1,6 @@
 // src/lib/mail.ts
 import nodemailer, { SendMailOptions } from "nodemailer";
-import { createInvoicePdf } from "./invoice"; // <-- uses your working invoice.ts (pdfkit stays there)
-
+import { createInvoicePdf } from "./invoice"; // keep your invoice.ts as-is (it should return Buffer or throw)
 const {
 SMTP_HOST,
 SMTP_PORT,
@@ -252,7 +251,7 @@ const t = nodemailer.createTransport({
 host,
 port,
 secure,
-auth: { user: SMTP_USER, pass: SMTP_PASS },
+auth: SMTP_USER && SMTP_PASS ? { user: SMTP_USER, pass: SMTP_PASS } : undefined,
 authMethod: "LOGIN",
 requireTLS: !secure,
 logger: true,
@@ -261,7 +260,8 @@ connectionTimeout: 15_000,
 greetingTimeout: 15_000,
 socketTimeout: 20_000,
 tls: secure ? undefined : { rejectUnauthorized: true },
-});
+} as any);
+// verify may throw (network / auth). Let caller handle errors.
 await t.verify();
 return t;
 }
@@ -281,10 +281,15 @@ return cached;
 console.error("[mail] primary SMTP failed:", e1?.message || e1);
 const altPort = wantPort === 465 ? 587 : 465;
 const altSecure = altPort === 465;
+try {
 console.log(`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`);
 cached = await makeTransport(host, altPort, altSecure);
 console.log("[mail] SMTP verify OK on fallback port");
 return cached;
+} catch (e2: any) {
+console.error("[mail] fallback SMTP also failed:", e2?.message || e2);
+throw e2;
+}
 }
 }
 
@@ -324,21 +329,32 @@ console.error("[mail] customer email failed:", err?.message || err);
 // 2) Admin email + PDF invoice attachment
 try {
 const brand = SITE_NAME || "Manny.lk";
-// createInvoicePdf is implemented in src/lib/invoice.ts (stays as you already have it)
-const pdfBuffer = await createInvoicePdf(order, brand);
+
+// createInvoicePdf may throw (fontkit/TTF issues or runtime). We guard.
+let pdfBuffer: Buffer | null = null;
+try {
+pdfBuffer = await createInvoicePdf(order, brand);
+} catch (pdfErr: any) {
+console.error("[mail] createInvoicePdf failed (falling back to no-attachment):", pdfErr?.message || pdfErr);
+pdfBuffer = null;
+}
+
+const attachments = pdfBuffer
+? [
+{
+filename: `invoice-${order.id}.pdf`,
+content: pdfBuffer,
+contentType: "application/pdf",
+},
+]
+: [];
 
 await reallySend({
 from: fromHeader,
 to: MAIL_TO_ORDERS || SMTP_USER,
 subject: `New Order — ${order.id} — ${order.customer.firstName} ${order.customer.lastName}`,
 html: renderAdminEmail(order),
-attachments: [
-{
-filename: `invoice-${order.id}.pdf`,
-content: pdfBuffer,
-contentType: "application/pdf",
-},
-],
+attachments,
 });
 } catch (err: any) {
 console.error("[mail] admin email failed:", err?.message || err);
