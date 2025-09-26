@@ -366,10 +366,10 @@ export default function CheckoutPage() {
               {bill.payment === "BANK" && (
                 <div className="space-y-3 rounded-lg border border-slate-700/60 p-3">
                   <div className="text-sm">
-                    <div><b>Bank:</b> Sampath Bank PLC</div>
-                    <div><b>Branch:</b> Colombo Fort</div>
-                    <div><b>Account No:</b> 001234567890</div>
-                    <div><b>Contact:</b> 0771234567</div>
+                    <div><b>Bank:</b> Commercial Bank PLC</div>
+                    <div><b>Branch:</b> Peradeniya</div>
+                    <div><b>Account No:</b> 8012454613</div>
+                    <div><b>Contact:</b> 0760703523</div>
                   </div>
                   <div>
                     <label className="block text-sm mb-1">Upload bank slip</label>
