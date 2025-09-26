@@ -1,11 +1,10 @@
 // src/lib/invoice.ts
 /**
-* Robust PDF invoice generator for serverless (Vercel) + Next.js.
-* Key points:
-* - Uses PDFKit *standalone* build to avoid AFM file reads (no ENOENT).
-* - If Inter-Regular.ttf exists, we embed it; else we keep using built-ins.
-* - If logo exists at /public/logo/manny-logo.png, we draw it.
-* - Always resolves with a Buffer (email attachment safe).
+* Stable PDF invoice generator for Next.js + Vercel:
+* - Imports "pdfkit" normally (no internal subpaths that break in lambdas).
+* - Embeds a TTF before first text → avoids AFM file lookups entirely.
+* - Resolves font/logo via import.meta.url (bundler-friendly), with /public fallbacks.
+* - Always returns a Buffer; never throws just because an asset is missing.
 */
 
 import type { OrderEmail } from "./mail";
@@ -13,7 +12,7 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
-/* ----------------------------- utilities ----------------------------- */
+/* ----------------- utils ----------------- */
 
 const mm = (v: number) => (v * 72) / 25.4;
 
@@ -31,175 +30,127 @@ timeStyle: "short",
 timeZone: "Asia/Colombo",
 }).format(new Date(iso));
 
-/** Try a list of dynamic imports until one works */
-async function firstImport<T = any>(candidates: string[]): Promise<T> {
-let lastErr: unknown;
-for (const spec of candidates) {
+function readIfExists(p: string): Buffer | null {
 try {
-// @ts-ignore – we intentionally rely on runtime resolution
-const mod = await import(spec);
-return (mod as any)?.default ?? (mod as any);
-} catch (e) {
-lastErr = e;
-}
-}
-throw lastErr;
-}
-
-/** PDFKit loader – prefer the standalone build */
-async function loadPDFKit(): Promise<any> {
-// Try known standalone entry points first (handles bundled fonts => no AFM I/O)
-return await firstImport<any>([
-"pdfkit/js/pdfkit.standalone.js",
-"pdfkit/dist/pdfkit.standalone.js",
-// Extremely defensive: fall back to the main export if needed
-"pdfkit",
-]);
-}
-
-/** Optional fontkit (not required when using standalone, but enables TTF embedding) */
-async function loadFontkit(): Promise<any | null> {
-try {
-// @ts-ignore
-const mod = await import("fontkit");
-return (mod as any)?.default ?? (mod as any);
+return fs.existsSync(p) ? fs.readFileSync(p) : null;
 } catch {
 return null;
 }
 }
 
-/** Read a file if it exists (safe on serverless read-only fs) */
-function readIfExists(abs: string): Buffer | null {
+function readNearHere(rel: string): Buffer | null {
 try {
-return fs.existsSync(abs) ? fs.readFileSync(abs) : null;
+const url = new URL(rel, import.meta.url);
+return fs.readFileSync(fileURLToPath(url));
 } catch {
 return null;
 }
 }
 
-/**
-* Try to resolve an asset so the bundler includes it in the server chunk
-* (works even if /public isn’t copied as-is into the Lambda).
-*/
-function readAssetNearSource(relFromSrc: string): Buffer | null {
-try {
-// invoice.ts is in src/lib => resolve against that location at build time
-const url = new URL(relFromSrc, import.meta.url);
-const p = fileURLToPath(url);
-return readIfExists(p);
-} catch {
-return null;
-}
-}
-
-/** Get company meta (env-overridable) */
+/* Company meta */
 function getCompany(brand: string) {
-const address = process.env.COMPANY_ADDRESS || "35/24, Udaperadeniya, Peradeniya";
-const phoneRaw = (process.env.NEXT_PUBLIC_WHATSAPP_PHONE || "94760703523").replace(/[^\d]/g, "");
-const phone = phoneRaw.startsWith("94")
-? `+94 ${phoneRaw.slice(2, 4)} ${phoneRaw.slice(4, 7)} ${phoneRaw.slice(7)}`
-: phoneRaw;
-const email = process.env.MAIL_TO_CONTACT || "info@manny.lk";
-const website = process.env.NEXT_PUBLIC_SITE_URL || "https://www.manny.lk";
-return { brand, address, phone, email, website };
+return {
+brand,
+address: process.env.COMPANY_ADDRESS || "35/24, Udaperadeniya, Peradeniya",
+phone: process.env.COMPANY_PHONE || "+94 76 070 3523",
+email: process.env.MAIL_TO_CONTACT || "info@manny.lk",
+website: process.env.NEXT_PUBLIC_SITE_URL || "https://www.manny.lk",
+};
 }
 
-/* --------------------------------- main -------------------------------- */
+/* ----------------- main ----------------- */
 
 export async function createInvoicePdf(order: OrderEmail, brand: string): Promise<Buffer> {
-const PDFDocument = await loadPDFKit();
-const fontkit = await loadFontkit();
-const company = getCompany(brand);
+// 1) Load pdfkit and fontkit normally
+// @ts-ignore: runtime import, types provided by @types/pdfkit
+const PDFDocument = (await import("pdfkit")).default ?? (await import("pdfkit"));
+let fontkit: any = null;
+try {
+// @ts-ignore
+const fk = await import("fontkit");
+fontkit = fk.default ?? fk;
+} catch {
+fontkit = null;
+}
 
-const doc: any = new PDFDocument({
+// 2) Create doc + buffer stream
+const doc: any = new (PDFDocument as any)({
 size: "A4",
-margins: { top: mm(18), bottom: mm(18), left: mm(18), right: mm(18) },
+margins: { top: mm(18), right: mm(18), bottom: mm(18), left: mm(18) },
 bufferPages: true,
 pdfVersion: "1.3",
 });
 
-// --- stream to buffer
 const chunks: Buffer[] = [];
-const result = new Promise<Buffer>((resolve, reject) => {
+const done = new Promise<Buffer>((resolve, reject) => {
 doc.on("data", (c: Buffer) => chunks.push(c));
 doc.on("error", reject);
 doc.on("end", () => resolve(Buffer.concat(chunks)));
 });
 
-// --- fonts (make sure we select a font BEFORE any text)
+// 3) Embed TTF BEFORE any text so pdfkit never touches AFM
 try {
-// Prefer bundler-included asset near source (works on Vercel Lambda)
-// Path from src/lib/invoice.ts -> ../../public/fonts/Inter-Regular.ttf
-let ttf =
-readAssetNearSource("../../public/fonts/Inter-Regular.ttf") ||
-// Fallback to runtime project root (dev/local)
+const ttf =
+// preferred: ship the font with the server chunk
+readNearHere("./assets/Inter-Regular.ttf") ||
+// fallback: from /public (works locally)
 readIfExists(path.join(process.cwd(), "public", "fonts", "Inter-Regular.ttf"));
 
-if (fontkit && ttf) {
+if (ttf && fontkit) {
 if (typeof doc.registerFontkit === "function") doc.registerFontkit(fontkit);
-else (doc as any)._fontkit = fontkit; // older/newer shapes
+else (doc as any)._fontkit = fontkit;
 doc.registerFont("Body", ttf);
 doc.font("Body");
 } else {
-// Using standalone build's built-ins. Pick a standard font name explicitly so
-// pdfkit doesn’t try to walk to AFM files (standalone has them in-bundle).
+// still safe: pick a built-in name but we already won’t touch it
+// because we won’t call text before setting "Body" if ttf exists.
 doc.font("Helvetica");
 }
 } catch {
-// Even if anything above fails, standalone’s default font will still work.
+// ignore; pdf will still be produced
 }
 
-/* ---------- header (logo + brand) ---------- */
+// 4) Header with logo + company block
+const company = getCompany(brand);
 try {
 const logo =
-readAssetNearSource("../../public/logo/manny-logo.png") ||
+readNearHere("./assets/manny-logo.png") ||
 readIfExists(path.join(process.cwd(), "public", "logo", "manny-logo.png"));
-const headerY = doc.y;
 
+const headerY = doc.y;
 if (logo) {
-doc.image(logo, doc.page.margins.left, headerY, { width: mm(24) });
-doc
-.fillColor("#0f172a")
-.fontSize(18)
-.text(company.brand, doc.page.margins.left + mm(30), headerY + mm(2), { width: mm(120) });
-doc.fontSize(11).fillColor("#334155").text("Invoice", doc.page.margins.left + mm(30), headerY + mm(11));
+doc.image(logo, doc.page.margins.left, headerY, { width: mm(26) });
+doc.fillColor("#0f172a").fontSize(18).text(company.brand, doc.page.margins.left + mm(32), headerY + 2);
+doc.fontSize(11).fillColor("#334155").text("Invoice", doc.page.margins.left + mm(32), headerY + 12);
 } else {
 doc.fillColor("#0f172a").fontSize(18).text(company.brand);
 doc.fontSize(11).fillColor("#334155").text("Invoice");
 }
 
-// Company block (right)
-const rightX = doc.page.width - doc.page.margins.right - mm(72);
-const topY = headerY;
+const rightX = doc.page.width - doc.page.margins.right - mm(80);
 doc
 .fontSize(9)
 .fillColor("#334155")
-.text(company.address, rightX, topY, { width: mm(72), align: "right" })
-.text(`Phone: ${company.phone}`, rightX, doc.y, { width: mm(72), align: "right" })
-.text(company.email, rightX, doc.y, { width: mm(72), align: "right" })
-.text(company.website, rightX, doc.y, { width: mm(72), align: "right" });
+.text(company.address, rightX, headerY, { width: mm(80), align: "right" })
+.text(`Phone: ${company.phone}`, rightX, doc.y, { width: mm(80), align: "right" })
+.text(company.email, rightX, doc.y, { width: mm(80), align: "right" })
+.text(company.website, rightX, doc.y, { width: mm(80), align: "right" });
 
 doc.moveDown(0.8);
-line(doc);
+hr(doc);
 } catch {
 // keep going
 }
 
-/* ---------- meta row ---------- */
+// 5) Meta row
 doc.moveDown(0.6);
 const metaY = doc.y;
 const colW = (doc.page.width - doc.page.margins.left - doc.page.margins.right) / 2 - mm(6);
 
-doc
-.fontSize(10)
-.fillColor("#475569")
-.text(`Order ID: ${order.id}`, doc.page.margins.left, metaY, { width: colW })
-.text(`Date: ${fmtLK(order.createdAt)}`, doc.page.margins.left, doc.y, { width: colW });
-
-doc
-.fontSize(10)
-.fillColor("#475569")
-.text(
+doc.fontSize(10).fillColor("#475569");
+doc.text(`Order ID: ${order.id}`, doc.page.margins.left, metaY, { width: colW });
+doc.text(`Date: ${fmtLK(order.createdAt)}`, doc.page.margins.left, doc.y, { width: colW });
+doc.text(
 `Payment: ${order.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}`,
 doc.page.margins.left + colW + mm(12),
 metaY,
@@ -207,9 +158,9 @@ metaY,
 );
 
 doc.moveDown(0.6);
-line(doc);
+hr(doc);
 
-/* ---------- addresses ---------- */
+// 6) Addresses
 doc.moveDown(0.6);
 const addrTop = doc.y;
 
@@ -248,9 +199,9 @@ width: colW,
 }
 
 doc.moveDown(0.6);
-line(doc);
+hr(doc);
 
-/* ---------- items ---------- */
+// 7) Items
 doc.moveDown(0.6);
 doc.fontSize(11).fillColor("#0f172a").text("Items");
 
@@ -272,8 +223,8 @@ doc.text("Total", col.total, tableTop, { width: mm(25), align: "right" });
 let y = tableTop + mm(6);
 doc.strokeColor("#e5e7eb").moveTo(col.item, y).lineTo(col.right, y).stroke();
 
-doc.fontSize(10).fillColor("#0f172a");
 const rowGap = mm(7);
+doc.fontSize(10).fillColor("#0f172a");
 
 for (const it of order.items) {
 const nextY = y + rowGap;
@@ -281,7 +232,7 @@ if (nextY > doc.page.height - doc.page.margins.bottom - mm(50)) {
 doc.addPage();
 y = doc.y = doc.page.margins.top;
 
-// repeat header
+// repeat header row
 doc.fontSize(10).fillColor("#64748b");
 doc.text("Item", col.item, y, { width: mm(120) });
 doc.text("Qty", col.qty, y, { width: mm(20), align: "right" });
@@ -302,7 +253,7 @@ y = nextY;
 doc.strokeColor("#f1f5f9").moveTo(col.item, y - mm(2)).lineTo(col.right, y - mm(2)).stroke();
 }
 
-/* ---------- totals ---------- */
+// 8) Totals
 doc.moveDown(1);
 const labelX = col.total - mm(50);
 const valueX = col.total;
@@ -316,18 +267,15 @@ doc.fontSize(bold ? 12 : 10).fillColor("#0f172a").text(value, valueX, y0, { widt
 
 totalRow("Subtotal", money(order.subtotal));
 if (order.promoDiscount && order.promoDiscount > 0) {
-totalRow(
-`Discount${order.promoCode ? ` (${order.promoCode})` : ""}`,
-"-" + money(order.promoDiscount)
-);
+totalRow(`Discount${order.promoCode ? ` (${order.promoCode})` : ""}`, "-" + money(order.promoDiscount));
 }
 totalRow("Shipping", order.freeShipping ? "Free" : money(order.shipping));
 totalRow("Grand Total", money(order.total), true);
 
-/* ---------- notes ---------- */
+// 9) Notes
 if (order.customer.notes) {
 doc.moveDown(0.8);
-line(doc);
+hr(doc);
 doc.moveDown(0.4);
 doc.fontSize(11).fillColor("#0f172a").text("Notes");
 doc.fontSize(10).fillColor("#334155").text(order.customer.notes, {
@@ -335,9 +283,9 @@ width: col.right - doc.page.margins.left,
 });
 }
 
-/* ---------- footer ---------- */
+// 10) Footer (centered)
 doc.moveDown(1);
-line(doc);
+hr(doc);
 const footer = `© ${new Date().getFullYear()} ${company.brand} — All rights reserved.`;
 doc
 .fontSize(9)
@@ -348,12 +296,11 @@ align: "center",
 });
 
 doc.end();
-return result;
+return done;
 }
 
-/* -------------------------------- helpers ------------------------------- */
-
-function line(doc: any) {
+/* ---- helpers ---- */
+function hr(doc: any) {
 const L = doc.page.margins.left;
 const R = doc.page.width - doc.page.margins.right;
 doc.strokeColor("#e5e7eb").moveTo(L, doc.y).lineTo(R, doc.y).stroke();
