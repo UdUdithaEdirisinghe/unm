@@ -1,9 +1,10 @@
 // src/lib/invoice.ts
 /**
-* Old-school, stamp-ready invoice PDF.
-* - Pure PDF assembly w/ base Helvetica (no font files, no AFM reads).
-* - Accurate centering/right-alignment with simple width model.
-* - Wrapping in header/billing/shipping. Minimal ASCII-only footer.
+* Old-school, stamp-ready invoice PDF (no font files, no AFM lookups).
+* - ASCII-only content, Type1 Helvetica (base font) → works on Vercel serverless.
+* - Pixel-clean centering & right-alignment, robust wrapping.
+* - Big "Authorized Signature / Seal" panel (no notes).
+* - Meta box includes Payment method (COD/Direct Bank Transfer).
 */
 
 import type { OrderEmail } from "./mail";
@@ -16,15 +17,14 @@ email: "info@manny.lk",
 web: "www.manny.lk",
 };
 
-const A4 = { w: 595.28, h: 841.89 };
-const MARGIN = 42;
+const A4 = { w: 595.28, h: 841.89 }; // pt
+const MARGIN = 42; // pt
 
 const FONT = {
 body: "F1",
 size: { title: 22, normal: 11, small: 9 },
 avgChar(size: number) {
-// avg glyph width ~0.48em for Helvetica at common sizes
-return size * 0.48;
+return size * 0.48; // ~ Helvetica average glyph width
 },
 };
 
@@ -155,26 +155,31 @@ body += BT(left + brandPad, y - 20, FONT.size.normal) + TL(lead);
 for (const ln of brandLines) body += T(ln) + TSTAR;
 body += ET;
 
-// PERFECT center for "INVOICE" inside right box
+// Center “INVOICE” in right header box
 const title = "INVOICE";
 const ts = FONT.size.title;
 const tw = title.length * FONT.avgChar(ts);
-const tx = titleX + (titleW - tw) / 2; // horizontal center
+const tx = titleX + (titleW - tw) / 2;
 const boxTop = y - headerH;
 const boxMidY = boxTop + headerH / 2;
-// baseline so glyphs look optically centered vertically
-const baseline = boxMidY - ts * 0.32; // ~0.32 ascender tweak
+const baseline = boxMidY - ts * 0.32;
 body += BT(Math.max(titleX + 6, tx), baseline, ts) + T(title) + ET;
 
 y -= headerH + 12;
 
-/* Meta */
-const metaH = 44;
+/* Meta (Order + Date + Payment) */
+const metaH = 58;
 body += box(left, y - metaH, width, metaH);
-body += BT(left + 12, y - 16, FONT.size.normal) + TL(lead);
-body += T(`Order ID: ${ascii(order.id)}`) + TSTAR + T(`Date: ${fmtLK(order.createdAt)}`);
-body += ET;
-
+body += BT(left + 12, y - 18, FONT.size.normal) + TL(lead);
+body += T(`Order ID: ${ascii(order.id)}`) + TSTAR;
+body += T(`Date: ${fmtLK(order.createdAt)}`) + TSTAR;
+const pay =
+order.paymentMethod === "BANK"
+? "Direct Bank Transfer"
+: order.paymentMethod === "COD"
+? "Cash on Delivery"
+: ascii(order.paymentMethod || "Payment");
+body += T(`Payment: ${pay}`) + ET;
 y -= metaH + 12;
 
 /* Billing / Shipping */
@@ -267,11 +272,11 @@ y -= rowH;
 
 y -= 12;
 
-/* Totals */
+/* Totals (right column) */
 const hasDiscount = !!(order.promoDiscount && order.promoDiscount > 0);
 const rows = 3 + (hasDiscount ? 1 : 0);
 const totalsH = rows * rowH;
-const totalsW = Math.max(220, Math.round(width * 0.42));
+const totalsW = Math.max(230, Math.round(width * 0.42));
 const totalsX = right - totalsW;
 body += box(totalsX, y - totalsH, totalsW, totalsH);
 
@@ -279,7 +284,7 @@ let ty = y - 14;
 body = totalsRow(body, totalsX, ty, totalsW, "Subtotal", money(order.subtotal));
 ty -= rowH;
 if (hasDiscount) {
-const label = `Discount${order.promoCode ? " (" + ascii(order.promoCode) + ")" : ""}`;
+const label = `Discount ${order.promoCode ? "(" + ascii(order.promoCode) + ")" : "(FD)"}`;
 body = totalsRow(body, totalsX, ty, totalsW, label, "-" + money(order.promoDiscount || 0));
 ty -= rowH;
 }
@@ -293,24 +298,11 @@ order.freeShipping ? "Free" : money(order.shipping)
 );
 ty -= rowH;
 body = totalsRow(body, totalsX, ty, totalsW, "Grand Total", money(order.total), true);
-y -= totalsH + 16;
+y -= totalsH + 18;
 
-/* Notes (optional) */
-if (order.customer.notes) {
-const notesW = totalsX - left - 16;
-const notesH = 66;
-body += box(left, y - notesH, notesW, notesH);
-body += BT(left + 10, y - 18, FONT.size.normal) + TL(14);
-body += T("Order notes") + TSTAR;
-const wrapped = wrapToWidth(order.customer.notes, notesW - 20, FONT.size.normal);
-for (const ln of wrapped) body += T(ln) + TSTAR;
-body += ET;
-y -= notesH + 16;
-}
-
-/* Signature / Seal */
-const sealW = 190;
-const sealH = 70;
+/* Signature / Seal only */
+const sealW = 280;
+const sealH = 140;
 const sealX = right - sealW;
 const sealTop = y - sealH;
 body += box(sealX, sealTop, sealW, sealH);
@@ -319,10 +311,12 @@ const sigText = "Authorized Signature / Seal";
 const sigSize = FONT.size.normal;
 const sigWidth = sigText.length * FONT.avgChar(sigSize);
 const sigX = sealX + (sealW - sigWidth) / 2;
-const sigBaseline = sealTop + sealH * 0.33; // lower-middle area
+const sigBaseline = sealTop + sealH * 0.35;
 body += BT(Math.max(sealX + 8, sigX), sigBaseline, sigSize) + T(sigText) + ET;
 
-/* Footer (ASCII, centered) */
+y -= sealH + 20;
+
+/* Footer */
 const footer = `(c) ${new Date().getFullYear()} ${brand.name} - All rights reserved.`;
 const est = footer.length * FONT.avgChar(FONT.size.small);
 const fx = left + (width - est) / 2;
