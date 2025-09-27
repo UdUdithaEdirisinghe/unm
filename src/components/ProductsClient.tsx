@@ -18,7 +18,7 @@ function safeStr(v: unknown): string {
   return String(v ?? "").trim();
 }
 
-// kept here (no server import => no hydration issues)
+// kept local (no server import)
 function slugify(s: string) {
   return (s || "")
     .toLowerCase()
@@ -93,8 +93,8 @@ export default function ProductsClient({
     if (!Number.isFinite(min)) min = 0;
 
     return {
-      cats: Array.from(catSet).sort(),     // "power-banks", "chargers", …
-      brands: Array.from(brandSet).sort(), // raw brand labels
+      cats: Array.from(catSet).sort(),
+      brands: Array.from(brandSet).sort(),
       minPrice: min,
       maxPrice: max,
     };
@@ -104,7 +104,7 @@ export default function ProductsClient({
   const filtered = useMemo(() => {
     let out = base.slice();
 
-    // search (exact substring across key fields)
+    // search (exact substring)
     if (q) {
       const term = safeStr(q).toLowerCase();
       out = out.filter((p) => {
@@ -157,8 +157,10 @@ export default function ProductsClient({
       const bIn = (b.stock ?? 0) > 0;
       if (aIn !== bIn) return aIn ? -1 : 1;
 
-      const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
-      const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+      const aSale =
+        typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+      const bSale =
+        typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
       if (aSale !== bSale) return aSale ? -1 : 1;
 
       const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -195,19 +197,14 @@ export default function ProductsClient({
       ? `Best prices on ${pretty[cat]} in Sri Lanka`
       : "Best prices on Tech Accessories in Sri Lanka";
 
-  /* ------------------------------ UI ------------------------------ */
   return (
     <div className="site-container py-6 space-y-4">
-      {/* Title + actions row (search stays on the RIGHT to match your layout) */}
+      {/* header row – search on the RIGHT */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-white">{title}</h1>
 
         <div className="flex w-full items-center gap-3 sm:w-auto">
-          <SearchBar
-            initial={q}
-            placeholder="Search products…"
-            className="w-full sm:w-[420px]"
-          />
+          <SearchBar initial={q} placeholder="Search products…" className="w-full sm:w-[420px]" />
           <button
             type="button"
             className="btn-secondary"
@@ -220,20 +217,13 @@ export default function ProductsClient({
         </div>
       </div>
 
-      {/* Filters dropdown */}
+      {/* filters dropdown */}
       {open && (
-        <section
-          id="filters-panel"
-          className="rounded-xl border border-slate-800 bg-[#0b1220] p-4"
-        >
+        <section id="filters-panel" className="rounded-xl border border-slate-800 bg-[#0b1220] p-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <label className="block text-sm text-slate-300">
               Category
-              <select
-                value={cat}
-                onChange={(e) => setCat(e.target.value)}
-                className="select mt-1 w-full"
-              >
+              <select value={cat} onChange={(e) => setCat(e.target.value)} className="select mt-1 w-full">
                 <option value="">All</option>
                 {facets.cats.map((c) => (
                   <option key={c} value={c}>
@@ -245,11 +235,7 @@ export default function ProductsClient({
 
             <label className="block text-sm text-slate-300">
               Brand
-              <select
-                value={brand}
-                onChange={(e) => setBrand(e.target.value)}
-                className="select mt-1 w-full"
-              >
+              <select value={brand} onChange={(e) => setBrand(e.target.value)} className="select mt-1 w-full">
                 <option value="">All</option>
                 {facets.brands.map((b) => (
                   <option key={b} value={b}>
@@ -266,9 +252,7 @@ export default function ProductsClient({
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={priceMin === "" ? "" : String(priceMin)}
-                  onChange={(e) =>
-                    setPriceMin(e.target.value === "" ? "" : Number(e.target.value))
-                  }
+                  onChange={(e) => setPriceMin(e.target.value === "" ? "" : Number(e.target.value))}
                   className="input"
                   placeholder={`Min${facets.minPrice ? ` ≥ ${facets.minPrice}` : ""}`}
                 />
@@ -276,9 +260,7 @@ export default function ProductsClient({
                   inputMode="numeric"
                   pattern="[0-9]*"
                   value={priceMax === "" ? "" : String(priceMax)}
-                  onChange={(e) =>
-                    setPriceMax(e.target.value === "" ? "" : Number(e.target.value))
-                  }
+                  onChange={(e) => setPriceMax(e.target.value === "" ? "" : Number(e.target.value))}
                   className="input"
                   placeholder={`Max${facets.maxPrice ? ` ≤ ${facets.maxPrice}` : ""}`}
                 />
@@ -286,11 +268,7 @@ export default function ProductsClient({
             </div>
 
             <label className="mt-6 inline-flex items-center gap-2 text-sm text-slate-300">
-              <input
-                type="checkbox"
-                checked={stockOnly}
-                onChange={(e) => setStockOnly(e.target.checked)}
-              />
+              <input type="checkbox" checked={stockOnly} onChange={(e) => setStockOnly(e.target.checked)} />
               In stock only
             </label>
           </div>
@@ -306,7 +284,7 @@ export default function ProductsClient({
         </section>
       )}
 
-      {/* Grid (equal-height cards, no visual change to ProductCard itself) */}
+      {/* grid – equal-height cards */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-[#0b1220] p-6 text-slate-300">
           No products match your filters.

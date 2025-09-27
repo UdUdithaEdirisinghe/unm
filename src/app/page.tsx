@@ -1,4 +1,3 @@
-// src/app/page.tsx
 import Link from "next/link";
 import ProductCard from "../components/ProductCard";
 import SearchBar from "../components/SearchBar";
@@ -57,7 +56,6 @@ function normalizeCategoryName(raw: string): string {
   if (/(backpack|bag|sleeve|pouch|case)/.test(s)) return "bags";
   if (/(earbud|headphone|headset|speaker|audio)/.test(s)) return "audio";
 
-  // fallback: auto-slug any new category
   const fallback = slugify(raw);
   return fallback || "others";
 }
@@ -89,7 +87,6 @@ function pick(
 export default async function HomePage() {
   const all = await getProducts();
 
-  // Featured = Most Visited (in-stock first → popularity → newest)
   const featured = pick(
     all,
     8,
@@ -100,7 +97,6 @@ export default async function HomePage() {
       ts(b) - ts(a)
   );
 
-  // On Sale (promo/discount), in-stock first, newest next
   const onSale = pick(
     all,
     8,
@@ -108,14 +104,12 @@ export default async function HomePage() {
     (a, b) => (isInStock(b) as any) - (isInStock(a) as any) || ts(b) - ts(a)
   );
 
-  // Group products by normalized category actually present in data
   const categories: Record<string, Product[]> = {};
   for (const p of all) {
     const cat = inferCategory(p);
     (categories[cat] ??= []).push(p);
   }
 
-  // Pretty names for known cats
   const label: Record<string, string> = {
     "power-banks": "Power Banks",
     chargers: "Chargers & Adapters",
@@ -125,7 +119,6 @@ export default async function HomePage() {
     others: "Miscellaneous",
   };
 
-  // Preferred order, but we’ll render only what exists.
   const preferredOrder = ["power-banks", "chargers", "cables", "bags", "audio", "others"];
   const present = Object.keys(categories);
 
@@ -153,7 +146,7 @@ export default async function HomePage() {
             See all →
           </Link>
         </div>
-        {/* Only change: stretch grid + wrapper div for equal card heights */}
+        {/* Equal-height grid items */}
         <div className="grid grid-cols-2 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((p) => (
             <div key={(p as any).id} className="h-full">
@@ -167,7 +160,7 @@ export default async function HomePage() {
 
   return (
     <div className="space-y-10">
-      {/* Hero */}
+      {/* Hero (unchanged) */}
       <section className="rounded-2xl border border-slate-800/60 bg-[rgba(10,15,28,0.9)] px-4 py-10 sm:px-8">
         <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
           Tech for everybody.
