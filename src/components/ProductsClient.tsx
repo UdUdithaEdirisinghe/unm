@@ -10,7 +10,7 @@ import Fuse from "fuse.js";
 type Props = {
   products: Product[];
   initialQuery?: string;
-  initialCat?: string;   // normalised slug (e.g., "power-banks")
+  initialCat?: string;   // normalized slug (e.g., "power-banks")
   initialBrand?: string; // lowercased brand
 };
 
@@ -18,8 +18,14 @@ type Props = {
 function safeStr(v: unknown): string {
   return String(v ?? "").trim();
 }
-
-// local helpers (don’t import from server to avoid hydration drift)
+function toLower(s: string) {
+  return s.toLowerCase();
+}
+/** remove spaces, hyphens, underscores and dots so "power bank" => "powerbank" */
+function compactify(s: string) {
+  return toLower(safeStr(s)).replace(/[\s\-_\.]+/g, "");
+}
+// kept local to avoid server imports
 function slugify(s: string) {
   return (s || "")
     .toLowerCase()
@@ -41,19 +47,8 @@ function normalizeCategoryName(raw: string): string {
 function inferCategory(p: Product): string {
   const explicit = safeStr((p as any).category || (p as any).type);
   if (explicit) return normalizeCategoryName(explicit);
-  const hay = [safeStr(p?.name), safeStr((p as any).slug)]
-    .join(" ")
-    .toLowerCase();
+  const hay = [safeStr(p?.name), safeStr((p as any).slug)].join(" ").toLowerCase();
   return normalizeCategoryName(hay);
-}
-
-// compact form used for fuzzy matching (removes spaces/dashes/underscores/dots)
-function compactStr(s: string): string {
-  return safeStr(s)
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^\w\s-]/g, "")
-    .replace(/[\s\-_.\/\\]/g, "");
 }
 
 /* ----------------------------- Component --------------------------- */
@@ -74,14 +69,14 @@ export default function ProductsClient({
   const [priceMax, setPriceMax] = useState<number | "">("");
   const [stockOnly, setStockOnly] = useState<boolean>(false);
 
-  // keep in sync with URL-provided values
+  // keep in sync with URL/state from server
   useEffect(() => {
     setQ(initialQuery);
     setCat(initialCat ?? "");
     setBrand(initialBrand ?? "");
   }, [initialQuery, initialCat, initialBrand]);
 
-  /* ------------------------------ Facets ------------------------------ */
+  // Facets (normalized categories + brands)
   const facets = useMemo(() => {
     const catSet = new Set<string>();
     const brandSet = new Set<string>();
@@ -112,85 +107,111 @@ export default function ProductsClient({
     };
   }, [base]);
 
-  /* ------------------------------ Fuse index ------------------------------ */
-  type Indexed = {
-    ref: Product;
-    name: string;
-    nameCompact: string;
-    brand: string;
-    brandCompact: string;
-    category: string;       // normalized slug (“power-banks”)
-    categoryCompact: string;
-    slug: string;
-    slugCompact: string;
-  };
-
-  const fuse = useMemo(() => {
-    // Build a searchable array with extra “compact” fields
-    const indexed: Indexed[] = base.map((p) => {
+  /* ----------------------- Search indexing ------------------------ */
+  /** Build a compact search string per product so queries like "powerbank" work */
+  const searchDocs = useMemo(() => {
+    return base.map((p) => {
+      const name = safeStr(p.name);
       const brand = safeStr(p.brand);
       const rawCat = safeStr((p as any).category || (p as any).type);
-      const catNorm = normalizeCategoryName(rawCat);
-      return {
-        ref: p,
-        name: safeStr(p.name),
-        nameCompact: compactStr(p.name),
-        brand,
-        brandCompact: compactStr(brand),
-        category: catNorm,
-        categoryCompact: compactStr(catNorm),
-        slug: safeStr((p as any).slug),
-        slugCompact: compactStr(safeStr((p as any).slug)),
-      };
-    });
+      const slug = safeStr((p as any).slug);
 
-    return new Fuse(indexed, {
-      keys: [
-        { name: "name", weight: 0.5 },
-        { name: "brand", weight: 0.25 },
-        { name: "category", weight: 0.2 },
-        { name: "slug", weight: 0.05 },
-        // compact fields for “powerbank”/typos/no-space
-        { name: "nameCompact", weight: 0.5 },
-        { name: "brandCompact", weight: 0.25 },
-        { name: "categoryCompact", weight: 0.2 },
-        { name: "slugCompact", weight: 0.05 },
-      ],
-      threshold: 0.38,          // typo tolerant but not too loose
-      distance: 120,
-      ignoreLocation: true,     // allow match anywhere in string
-      minMatchCharLength: 2,
-      useExtendedSearch: false,
+      // include normalized label + raw label
+      const normCat = inferCategory(p);
+      const prettyByNorm: Record<string, string> = {
+        "power-banks": "Power Banks",
+        chargers: "Chargers & Adapters",
+        cables: "Cables",
+        bags: "Bags & Sleeves",
+        audio: "Audio",
+        others: "Tech Accessories",
+      };
+      const prettyCat = prettyByNorm[normCat] ?? normCat;
+
+      // compact/space-less variants for robust matching
+      const searchCompact = compactify([name, brand, rawCat, slug, prettyCat].join(" "));
+      // a few common synonyms / variants
+      const synonyms = [
+        normCat === "power-banks" ? "power bank" : "",
+        normCat === "power-banks" ? "powerbank" : "",
+        normCat === "chargers" ? "adapters" : "",
+        normCat === "chargers" ? "adapter" : "",
+        normCat === "cables" ? "type c" : "",
+      ].filter(Boolean);
+
+      return {
+        ref: p,                 // keep reference to original product
+        name,
+        brand,
+        category: rawCat || prettyCat, // give Fuse something human-ish too
+        slug,
+        searchCompact,
+        synonyms,
+      };
     });
   }, [base]);
 
-  /* ------------------------------ Filter + sort ------------------------------ */
+  // Fuse.js index
+  const fuse = useMemo(() => {
+    return new Fuse(searchDocs, {
+      // Search across original fields + compact variant + synonyms
+      keys: [
+        { name: "name", weight: 0.5 },
+        { name: "brand", weight: 0.3 },
+        { name: "category", weight: 0.2 },
+        { name: "slug", weight: 0.1 },
+        { name: "searchCompact", weight: 0.6 }, // critical for "powerbank"
+        { name: "synonyms", weight: 0.2 },
+      ],
+      threshold: 0.45,        // good balance of fuzziness
+      distance: 200,
+      ignoreLocation: true,
+      includeScore: false,
+      useExtendedSearch: false,
+    });
+  }, [searchDocs]);
+
+  // Filter + sort
   const filtered = useMemo(() => {
-    let out = base.slice();
+    let out: Product[] = base.slice();
 
-    // 🔍 fuzzy search: try both raw term and compact term, then merge
+    // 🔍 robust search
     if (q) {
-      const raw = safeStr(q);
-      const term = raw.toLowerCase();
-      const compact = compactStr(raw);
+      const qTrim = safeStr(q);
+      const qCompact = compactify(qTrim);
 
-      const res1 = fuse.search(term);
-      const res2 = fuse.search(compact);
-
-      const seen = new Set<string>();
-      const merged: Product[] = [];
-      for (const r of [...res1, ...res2]) {
-        const item = r.item.ref as Product;
-        const id = String((item as any).id);
-        if (!seen.has(id)) {
-          seen.add(id);
-          merged.push(item);
+      // 1) exact compact contains (fast path; handles "powerbank" cleanly)
+      const compactHitSet = new Set<Product>();
+      for (const doc of searchDocs) {
+        if (doc.searchCompact.includes(qCompact)) {
+          compactHitSet.add(doc.ref);
         }
       }
+      const compactHits = Array.from(compactHitSet);
+
+      // 2) fuzzy results via Fuse
+      const fuzzyHits = fuse.search(qTrim).map((r) => r.item.ref);
+
+      // merge (preserve order: compact hits first, then any fuzzy not already included)
+      const seen = new Set<string>();
+      const merged: Product[] = [];
+      for (const p of compactHits) {
+        if (!seen.has(p.id)) {
+          merged.push(p);
+          seen.add(p.id);
+        }
+      }
+      for (const p of fuzzyHits) {
+        if (!seen.has(p.id)) {
+          merged.push(p);
+          seen.add(p.id);
+        }
+      }
+
       out = merged;
     }
 
-    // category (normalized)
+    // category filter (normalized)
     if (cat) {
       out = out.filter((p) => {
         const inferred = inferCategory(p);
@@ -199,7 +220,7 @@ export default function ProductsClient({
       });
     }
 
-    // brand (exact)
+    // brand filter (exact, case-insensitive)
     if (brand) {
       const b = brand.toLowerCase();
       out = out.filter((p) => safeStr(p.brand).toLowerCase() === b);
@@ -227,10 +248,8 @@ export default function ProductsClient({
       const bIn = (b.stock ?? 0) > 0;
       if (aIn !== bIn) return aIn ? -1 : 1;
 
-      const aSale =
-        typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
-      const bSale =
-        typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+      const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+      const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
       if (aSale !== bSale) return aSale ? -1 : 1;
 
       const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -241,7 +260,7 @@ export default function ProductsClient({
     });
 
     return out;
-  }, [base, q, cat, brand, priceMin, priceMax, stockOnly, fuse]);
+  }, [base, q, cat, brand, priceMin, priceMax, stockOnly, fuse, searchDocs]);
 
   // Clear all filters
   const clearAll = useCallback(() => {
@@ -253,7 +272,7 @@ export default function ProductsClient({
     setStockOnly(false);
   }, []);
 
-  // Title line (unchanged)
+  // Title line
   const pretty: Record<string, string> = {
     "power-banks": "Power Banks",
     chargers: "Chargers & Adapters",
@@ -267,10 +286,9 @@ export default function ProductsClient({
       ? `Best prices on ${pretty[cat]} in Sri Lanka`
       : "Best prices on Tech Accessories in Sri Lanka";
 
-  /* ------------------------------ UI ------------------------------ */
   return (
     <div className="site-container py-6 space-y-4">
-      {/* header row – search on RIGHT */}
+      {/* header row – search on the RIGHT (unchanged layout & palette) */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-white">{title}</h1>
 
@@ -292,7 +310,7 @@ export default function ProductsClient({
         </div>
       </div>
 
-      {/* filters dropdown */}
+      {/* filters dropdown (unchanged visuals) */}
       {open && (
         <section
           id="filters-panel"
@@ -342,7 +360,7 @@ export default function ProductsClient({
                     setPriceMin(e.target.value === "" ? "" : Number(e.target.value))
                   }
                   className="input"
-                  placeholder={`Min${facets.minPrice ? ` ≥ ${facets.minPrice}` : ""}`}
+                  placeholder="Min"
                 />
                 <input
                   inputMode="numeric"
@@ -352,7 +370,7 @@ export default function ProductsClient({
                     setPriceMax(e.target.value === "" ? "" : Number(e.target.value))
                   }
                   className="input"
-                  placeholder={`Max${facets.maxPrice ? ` ≤ ${facets.maxPrice}` : ""}`}
+                  placeholder="Max"
                 />
               </div>
             </div>
@@ -378,7 +396,7 @@ export default function ProductsClient({
         </section>
       )}
 
-      {/* grid – equal-height cards without changing ProductCard */}
+      {/* grid (unchanged) */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-[#0b1220] p-6 text-slate-300">
           No products match your filters.
