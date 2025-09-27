@@ -35,13 +35,7 @@ hasSale && salePrice
 
 const handleAddToCart = () => {
 add(
-{
-id: product.id,
-name: product.name,
-price: priceToUse,
-image: primary,
-slug: product.slug,
-},
+{ id: product.id, name: product.name, price: priceToUse, image: primary, slug: product.slug },
 1
 );
 toast.success(`${product.name} added to cart!`);
@@ -80,44 +74,39 @@ className="object-contain max-h-48"
 </div>
 </Link>
 
-{/* 📄 text (reserved heights to align cards) */}
+{/* 📄 text (title → brand → category) */}
 <div className="mt-3">
-{/* title: clamp to 3 lines and reserve space ~3 lines so heights match */}
+{/* Title: clamp to 3 lines & reserve that much height so rows align */}
 <Link
 href={`/products/${product.slug}`}
-title={product.name}
 className="block text-white font-medium leading-snug hover:text-[#6574ff] line-clamp-3 min-h-[3.75rem]"
+title={product.name}
 >
 {product.name}
 </Link>
 
-{/* brand + category: reserve exactly 2 lines even if one/both missing */}
+{/* Brand + Category directly under title, keep space even if missing */}
 <div className="mt-1 space-y-0.5 min-h-[2.0rem]">
 {product.brand ? (
 <div className="text-xs text-slate-400 truncate">{product.brand}</div>
 ) : (
-// invisible placeholder keeps height without showing text
-<div className="text-xs opacity-0 select-none">.</div>
+<div aria-hidden className="text-xs opacity-0 select-none">&nbsp;</div>
 )}
 
 {(product as any).category ? (
-<div className="text-xs text-slate-500 truncate">
-{(product as any).category}
-</div>
+<div className="text-xs text-slate-500 truncate">{(product as any).category}</div>
 ) : (
-<div className="text-xs opacity-0 select-none">.</div>
+<div aria-hidden className="text-xs opacity-0 select-none">&nbsp;</div>
 )}
 </div>
 </div>
 
-{/* spacer pushes price/button to the bottom uniformly */}
+{/* Spacer makes price/button stick to bottom uniformly */}
 <div className="flex-1" />
 
 {/* 💰 price */}
 <div className="mt-2 flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
-<p className="text-lg font-semibold text-white">
-{formatCurrency(priceToUse)}
-</p>
+<p className="text-lg font-semibold text-white">{formatCurrency(priceToUse)}</p>
 {hasSale && (
 <span className="text-sm text-slate-500 line-through">
 {formatCurrency(product.price)}
@@ -125,12 +114,10 @@ className="block text-white font-medium leading-snug hover:text-[#6574ff] line-c
 )}
 </div>
 
-{/* 🛒 add to cart */}
+{/* 🛒 button */}
 <div className="mt-3">
 <button
-className={`btn-primary w-full ${
-outOfStock ? "opacity-50 cursor-not-allowed" : ""
-}`}
+className={`btn-primary w-full ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
 disabled={outOfStock}
 onClick={handleAddToCart}
 >
