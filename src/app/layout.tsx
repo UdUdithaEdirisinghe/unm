@@ -1,4 +1,5 @@
 // src/app/layout.tsx
+import { Analytics } from "@vercel/analytics/next"
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Navbar from "../components/Navbar";
