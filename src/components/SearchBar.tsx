@@ -3,28 +3,30 @@
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 
-type Props = {
-  initial?: string;
-  placeholder?: string;
-  className?: string;
-};
-
+/**
+ * Exact-match search bar. Keeps your existing palette & spacing.
+ * Note: We intentionally keep it dumb (no fuzzy) per your request.
+ */
 export default function SearchBar({
   initial = "",
   placeholder = "Search products…",
   className = "",
-}: Props) {
+}: {
+  initial?: string;
+  placeholder?: string;
+  className?: string;
+}) {
   const router = useRouter();
-  const [q, setQ] = useState<string>(initial ?? "");
+  const [q, setQ] = useState<string>(initial);
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
-    const term = q.trim();
+    const term = (q || "").trim();
     router.push(term ? `/products?q=${encodeURIComponent(term)}` : "/products");
   }
 
   return (
-    <form onSubmit={onSubmit} className={`flex gap-2 w-full ${className}`}>
+    <form onSubmit={onSubmit} className={`flex gap-2 ${className}`}>
       <input
         value={q}
         onChange={(e) => setQ(e.target.value)}

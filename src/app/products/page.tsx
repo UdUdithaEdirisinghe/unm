@@ -4,7 +4,9 @@ export const revalidate = 0;
 import { getProducts, type Product } from "../../lib/products";
 import ProductsClient from "../../components/ProductsClient";
 
-/* ---------- Category Normalization (shared) ---------- */
+/* ------------------------------------------------------------------ */
+/* Category normalization (shared with Home, tolerant to data variants) */
+/* ------------------------------------------------------------------ */
 function slugify(s: string) {
   return (s || "")
     .toLowerCase()
@@ -14,20 +16,25 @@ function slugify(s: string) {
     .replace(/\s+/g, "-");
 }
 
-function normalizeCategoryName(raw: string): string {
+/** Map any raw category label to a stable route slug */
+export function normalizeCategoryName(raw: string): string {
   const s = (raw || "").trim().toLowerCase();
 
   if (/power\s*-?\s*bank/.test(s)) return "power-banks";
-  if (/(charger|adaptor|adapter|gan|wall\s*charger|car\s*charger)/.test(s)) return "chargers";
-  if (/(cable|usb|type\s*-?\s*c|lightning|micro\s*-?\s*usb)/.test(s)) return "cables";
+  if (/(charger|adaptor|adapter|gan|wall\s*charger|car\s*charger)/.test(s))
+    return "chargers";
+  if (/(cable|usb|type\s*-?\s*c|lightning|micro\s*-?\s*usb)/.test(s))
+    return "cables";
   if (/(backpack|bag|sleeve|pouch|case)/.test(s)) return "bags";
   if (/(earbud|headphone|headset|speaker|audio)/.test(s)) return "audio";
 
+  // fallback: slugify anything unknown so URLs are stable
   const fallback = slugify(raw);
   return fallback || "others";
 }
 
-function inferCategory(p: Product): string {
+/** Best-effort inference: prefer explicit category field, then name/slug hints */
+export function inferCategory(p: Product): string {
   const explicit = String(((p as any).category || (p as any).type || "")).trim();
   if (explicit) return normalizeCategoryName(explicit);
 
@@ -37,79 +44,37 @@ function inferCategory(p: Product): string {
   return normalizeCategoryName(hay);
 }
 
-/* ---------- Search helpers ---------- */
-function norm(s: string) {
-  return (s || "").toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim();
+/* ------------------------ Exact search helpers ------------------------ */
+function safeStr(v: unknown): string {
+  return String(v ?? "").trim();
 }
-const compact = (s: string) => norm(s).replace(/[\s\-_/\.]/g, "");
-
-function levenshtein(a: string, b: string): number {
-  const m = a.length, n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost
-      );
-    }
-  }
-  return dp[m][n];
-}
-
-function scoreTokenAgainstField(token: string, field: string): number {
-  if (!token || !field) return 0;
-  const f = norm(field);
-  const words = f.split(" ").filter(Boolean);
-  const t = norm(token);
-  const fC = compact(f);
-  const tC = compact(t);
-
-  if (words.includes(t)) return 1.0;
-  if (words.some((w) => w.startsWith(t))) return 0.8;
-  if (f.includes(t)) return 0.6;
-  if (fC.includes(tC)) return 0.7;
-  if (fC.startsWith(tC)) return 0.78;
-
-  if (t.length >= 4) {
-    for (const w of words) {
-      if (Math.abs(w.length - t.length) > 1) continue;
-      const d = levenshtein(t, w);
-      if (d <= 1) return 0.72 - d * 0.1;
-    }
-    if (Math.abs(fC.length - tC.length) <= 1) {
-      const d2 = levenshtein(tC, fC);
-      if (d2 <= 1) return 0.7 - d2 * 0.08;
-    }
-  }
-  return 0;
-}
-
 function matches(product: Product, q: string) {
-  const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return true;
-  const haystacks: string[] = [
-    product.name ?? "",
-    product.brand ?? "",
-    (product as any).category ?? (product as any).type ?? "",
-    (product as any).slug ?? "",
-  ].map((s) => String(s));
-  return tokens.every((t) => haystacks.some((h) => scoreTokenAgainstField(t, h) > 0.55));
+  const term = safeStr(q).toLowerCase();
+  if (!term) return true;
+
+  const hay = [
+    safeStr(product.name),
+    safeStr(product.brand),
+    safeStr((product as any).category ?? (product as any).type),
+    safeStr((product as any).slug),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  // exact substring (no fuzzy)
+  return hay.includes(term);
 }
 
+/* ------------------------------ sorting ------------------------------ */
 function sortProducts(a: Product, b: Product) {
   const aIn = (a.stock ?? 0) > 0;
   const bIn = (b.stock ?? 0) > 0;
   if (aIn !== bIn) return aIn ? -1 : 1;
 
-  const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
-  const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+  const aSale =
+    typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+  const bSale =
+    typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
   if (aSale !== bSale) return aSale ? -1 : 1;
 
   const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -119,45 +84,43 @@ function sortProducts(a: Product, b: Product) {
   return a.name.localeCompare(b.name);
 }
 
-/* ---------- page ---------- */
+/* -------------------------------- page -------------------------------- */
 type PageProps = { searchParams?: { q?: string; cat?: string; brand?: string } };
 
 export default async function ProductsPage({ searchParams }: PageProps) {
   const all = await getProducts();
 
-  const q = (searchParams?.q ?? "").trim();
-  const cat = normalizeCategoryName(searchParams?.cat ?? "");
-  const brand = (searchParams?.brand ?? "").trim().toLowerCase();
+  // Normalise incoming params (tolerant to “Power Bank”, “power-bank”, etc.)
+  const q = safeStr(searchParams?.q ?? "");
+  const catSlug = normalizeCategoryName(safeStr(searchParams?.cat ?? ""));
+  const brand = safeStr(searchParams?.brand ?? "").toLowerCase();
 
-  let filtered = all;
+  let filtered = all.slice();
+
   if (q) filtered = filtered.filter((p) => matches(p, q));
-  if (cat) filtered = filtered.filter((p) => inferCategory(p) === cat);
-  if (brand) filtered = filtered.filter((p) => (p.brand ?? "").trim().toLowerCase() === brand);
 
-  filtered = filtered.slice().sort(sortProducts);
+  if (catSlug) {
+    filtered = filtered.filter((p) => {
+      const inferred = inferCategory(p); // already normalised
+      const raw = normalizeCategoryName(safeStr((p as any).category));
+      return inferred === catSlug || raw === catSlug;
+    });
+  }
 
-  // Category heading
-  const categoryHeadings: Record<string, string> = {
-    "power-banks": "Best prices on Power Banks in Sri Lanka",
-    chargers: "Best prices on Chargers & Adapters in Sri Lanka",
-    cables: "Best prices on Cables in Sri Lanka",
-    bags: "Best prices on Bags & Sleeves in Sri Lanka",
-    audio: "Best prices on Audio Products in Sri Lanka",
-    others: "Best prices on Tech Accessories in Sri Lanka",
-  };
-  const heading = cat ? categoryHeadings[cat] ?? "" : "";
+  if (brand) {
+    filtered = filtered.filter(
+      (p) => safeStr(p.brand).toLowerCase() === brand
+    );
+  }
+
+  filtered.sort(sortProducts);
 
   return (
-    <>
-      {heading && (
-        <h1 className="mb-6 text-2xl font-bold text-white text-center">{heading}</h1>
-      )}
-      <ProductsClient
-        products={filtered}
-        initialQuery={q}
-        initialCat={cat || undefined}
-        initialBrand={brand || undefined}
-      />
-    </>
+    <ProductsClient
+      products={filtered}
+      initialQuery={q}
+      initialCat={catSlug || undefined}
+      initialBrand={brand || undefined}
+    />
   );
 }

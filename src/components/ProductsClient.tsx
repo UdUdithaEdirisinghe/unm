@@ -4,18 +4,22 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 import type { Product } from "../lib/products";
 import SearchBar from "./SearchBar";
 import ProductCard from "./ProductCard";
+import { normalizeCategoryName, inferCategory } from "../app/products/page"; // reuse same logic
 
+/* ------------------------------ Types ------------------------------ */
 type Props = {
   products: Product[];
   initialQuery?: string;
-  initialCat?: string;
-  initialBrand?: string;
+  initialCat?: string;   // normalised slug (e.g., "power-banks")
+  initialBrand?: string; // lowercased brand string
 };
 
-function norm(s: string) {
-  return (s || "").toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim();
+/* ------------------------------ Utils ------------------------------ */
+function safeStr(v: unknown): string {
+  return String(v ?? "").trim();
 }
 
+/* ----------------------------- Component --------------------------- */
 export default function ProductsClient({
   products,
   initialQuery = "",
@@ -24,28 +28,34 @@ export default function ProductsClient({
 }: Props) {
   const base: Product[] = Array.isArray(products) ? products : [];
 
+  // UI state
   const [q, setQ] = useState<string>(initialQuery);
   const [open, setOpen] = useState<boolean>(false);
   const [cat, setCat] = useState<string>(initialCat ?? "");
   const [brand, setBrand] = useState<string>(initialBrand ?? "");
   const [priceMin, setPriceMin] = useState<number | "">("");
   const [priceMax, setPriceMax] = useState<number | "">("");
+  const [stockOnly, setStockOnly] = useState<boolean>(false);
 
+  // keep in sync if server-provided searchParams change during nav
   useEffect(() => {
     setQ(initialQuery);
     setCat(initialCat ?? "");
     setBrand(initialBrand ?? "");
   }, [initialQuery, initialCat, initialBrand]);
 
+  // Facets (normalised categories + real brands)
   const facets = useMemo(() => {
-    const brands = new Set<string>();
-    const cats = new Set<string>();
+    const catSet = new Set<string>();
+    const brandSet = new Set<string>();
     let min = Number.POSITIVE_INFINITY;
     let max = 0;
 
     for (const p of base) {
-      if (p.brand) brands.add(String(p.brand));
-      if ((p as any).category) cats.add(String((p as any).category));
+      catSet.add(inferCategory(p)); // already normalised
+      const b = safeStr(p.brand);
+      if (b) brandSet.add(b);
+
       const eff =
         typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price
           ? (p.salePrice as number)
@@ -58,31 +68,49 @@ export default function ProductsClient({
     if (!Number.isFinite(min)) min = 0;
 
     return {
-      brands: Array.from(brands).sort(),
-      cats: Array.from(cats).sort(),
+      cats: Array.from(catSet).sort(),           // "power-banks", "chargers", …
+      brands: Array.from(brandSet).sort(),       // exact brand labels
       minPrice: min,
       maxPrice: max,
     };
   }, [base]);
 
+  // Derived visible list
   const filtered = useMemo(() => {
     let out = base.slice();
 
+    // search (exact substring across key fields)
     if (q) {
-      const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
-      out = out.filter((p) =>
-        tokens.every((t) =>
-          [p.name ?? "", p.brand ?? "", (p as any).category ?? "", p.slug ?? ""]
-            .join(" ")
-            .toLowerCase()
-            .includes(t)
-        )
-      );
+      const term = safeStr(q).toLowerCase();
+      out = out.filter((p) => {
+        const hay = [
+          safeStr(p.name),
+          safeStr(p.brand),
+          safeStr((p as any).category ?? (p as any).type),
+          safeStr((p as any).slug),
+        ]
+          .join(" ")
+          .toLowerCase();
+        return hay.includes(term);
+      });
     }
 
-    if (cat) out = out.filter((p) => norm((p as any).category ?? "") === norm(cat));
-    if (brand) out = out.filter((p) => norm(p.brand ?? "") === norm(brand));
+    // category (normalised)
+    if (cat) {
+      out = out.filter((p) => {
+        const inferred = inferCategory(p);
+        const raw = normalizeCategoryName(safeStr((p as any).category));
+        return inferred === cat || raw === cat;
+      });
+    }
 
+    // brand (exact)
+    if (brand) {
+      const b = brand.toLowerCase();
+      out = out.filter((p) => safeStr(p.brand).toLowerCase() === b);
+    }
+
+    // price
     if (priceMin !== "" || priceMax !== "") {
       out = out.filter((p) => {
         const eff =
@@ -95,13 +123,19 @@ export default function ProductsClient({
       });
     }
 
+    // stock
+    if (stockOnly) out = out.filter((p) => (p.stock ?? 0) > 0);
+
+    // sort (in-stock → on-sale → newest → name)
     out.sort((a, b) => {
       const aIn = (a.stock ?? 0) > 0;
       const bIn = (b.stock ?? 0) > 0;
       if (aIn !== bIn) return aIn ? -1 : 1;
 
-      const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
-      const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+      const aSale =
+        typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+      const bSale =
+        typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
       if (aSale !== bSale) return aSale ? -1 : 1;
 
       const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -112,43 +146,64 @@ export default function ProductsClient({
     });
 
     return out;
-  }, [base, q, cat, brand, priceMin, priceMax]);
+  }, [base, q, cat, brand, priceMin, priceMax, stockOnly]);
 
+  // Clear all filters
   const clearAll = useCallback(() => {
     setQ("");
     setCat("");
     setBrand("");
     setPriceMin("");
     setPriceMax("");
+    setStockOnly(false);
   }, []);
 
+  // Dynamic page title line
+  const pretty: Record<string, string> = {
+    "power-banks": "Power Banks",
+    chargers: "Chargers & Adapters",
+    cables: "Cables",
+    bags: "Bags & Sleeves",
+    audio: "Audio",
+    others: "Tech Accessories",
+  };
+  const title =
+    cat && pretty[cat]
+      ? `Best prices on ${pretty[cat]} in Sri Lanka`
+      : "Best prices on Tech Accessories in Sri Lanka";
+
+  /* ------------------------------ UI ------------------------------ */
   return (
-    <div className="site-container py-6">
-      {/* Search + Show filters aligned */}
-      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <SearchBar
-          initial={q}
-          placeholder="Search products…"
-          className="flex-1"
-        />
-        <button
-          type="button"
-          className="btn-secondary sm:w-auto w-full"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          aria-controls="filters-panel"
-        >
-          {open ? "Hide filters" : "Show filters"}
-        </button>
+    <div className="site-container py-6 space-y-4">
+      {/* Title + actions row (keep palette/layout; search at RIGHT) */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-xl font-semibold text-white">{title}</h1>
+
+        <div className="flex w-full items-center gap-3 sm:w-auto">
+          <SearchBar
+            initial={q}
+            placeholder="Search products…"
+            className="w-full sm:w-[420px]"
+          />
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            aria-controls="filters-panel"
+          >
+            {open ? "Hide filters" : "Show filters"}
+          </button>
+        </div>
       </div>
 
+      {/* Filters dropdown */}
       {open && (
         <section
           id="filters-panel"
-          className="mb-6 rounded-xl border border-slate-800 bg-[#0b1220] p-4"
+          className="rounded-xl border border-slate-800 bg-[#0b1220] p-4"
         >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Category */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <label className="block text-sm text-slate-300">
               Category
               <select
@@ -159,13 +214,12 @@ export default function ProductsClient({
                 <option value="">All</option>
                 {facets.cats.map((c) => (
                   <option key={c} value={c}>
-                    {c}
+                    {pretty[c] ?? c}
                   </option>
                 ))}
               </select>
             </label>
 
-            {/* Brand */}
             <label className="block text-sm text-slate-300">
               Brand
               <select
@@ -182,7 +236,6 @@ export default function ProductsClient({
               </select>
             </label>
 
-            {/* Price */}
             <div>
               <div className="text-sm text-slate-300">Price (LKR)</div>
               <div className="mt-1 grid grid-cols-2 gap-2">
@@ -208,6 +261,15 @@ export default function ProductsClient({
                 />
               </div>
             </div>
+
+            <label className="mt-6 inline-flex items-center gap-2 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={stockOnly}
+                onChange={(e) => setStockOnly(e.target.checked)}
+              />
+              In stock only
+            </label>
           </div>
 
           <div className="mt-4 flex gap-2">
@@ -221,14 +283,15 @@ export default function ProductsClient({
         </section>
       )}
 
+      {/* Grid */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-[#0b1220] p-6 text-slate-300">
           No products match your filters.
         </div>
       ) : (
-        <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {filtered.map((p) => (
-            <li key={p.id} className="flex">
+            <li key={p.id}>
               <ProductCard product={p} />
             </li>
           ))}
