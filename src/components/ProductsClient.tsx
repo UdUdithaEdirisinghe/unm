@@ -2,80 +2,10 @@
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import type { Product } from "../lib/products";
-import SearchBar from "./SearchBar";
+import { normalizeCategory } from "../lib/categories";
+import SearchBarComp from "./SearchBar";
 import ProductCard from "./ProductCard";
 
-/* ---------- utils ---------- */
-function norm(s: string) {
-  return (s || "").toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim();
-}
-const compact = (s: string) => norm(s).replace(/[\s\-_/\.]/g, "");
-
-function levenshtein(a: string, b: string): number {
-  const m = a.length, n = b.length;
-  if (m === 0) return n;
-  if (n === 0) return m;
-  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
-  for (let i = 0; i <= m; i++) dp[i][0] = i;
-  for (let j = 0; j <= n; j++) dp[0][j] = j;
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i][j] = Math.min(
-        dp[i - 1][j] + 1,
-        dp[i][j - 1] + 1,
-        dp[i - 1][j - 1] + cost
-      );
-    }
-  }
-  return dp[m][n];
-}
-
-function scoreTokenAgainstField(token: string, field: string): number {
-  if (!token || !field) return 0;
-  const f = norm(field);
-  const words = f.split(" ").filter(Boolean);
-  const t = norm(token);
-  const fC = compact(f);
-  const tC = compact(t);
-
-  if (words.includes(t)) return 1.0;
-  if (words.some((w) => w.startsWith(t))) return 0.8;
-  if (f.includes(t)) return 0.6;
-  if (fC.includes(tC)) return 0.7;
-  if (fC.startsWith(tC)) return 0.78;
-
-  if (t.length >= 4) {
-    for (const w of words) {
-      if (Math.abs(w.length - t.length) > 1) continue;
-      const d = levenshtein(t, w);
-      if (d <= 1) return 0.72 - d * 0.1;
-    }
-    if (Math.abs(fC.length - tC.length) <= 1) {
-      const d2 = levenshtein(tC, fC);
-      if (d2 <= 1) return 0.7 - d2 * 0.08;
-    }
-  }
-  return 0;
-}
-
-function matches(product: Product, q: string) {
-  const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return true;
-
-  const haystacks: string[] = [
-    product.name ?? "",
-    product.brand ?? "",
-    (product as any).category ?? (product as any).type ?? "",
-    product.slug ?? "",
-  ].map((s) => String(s ?? ""));
-
-  return tokens.every((t) =>
-    haystacks.some((h) => scoreTokenAgainstField(t, h) > 0.55)
-  );
-}
-
-/* ---------- component ---------- */
 type Props = {
   products: Product[];
   initialQuery?: string;
@@ -91,16 +21,15 @@ export default function ProductsClient({
 }: Props) {
   const base: Product[] = Array.isArray(products) ? products : [];
 
-  const [q, setQ] = useState<string>(initialQuery ?? "");
+  const [q, setQ] = useState<string>(initialQuery);
   const [open, setOpen] = useState<boolean>(false);
   const [cat, setCat] = useState<string>(initialCat ?? "");
   const [brand, setBrand] = useState<string>(initialBrand ?? "");
   const [priceMin, setPriceMin] = useState<number | "">("");
   const [priceMax, setPriceMax] = useState<number | "">("");
-  const [stockOnly, setStockOnly] = useState(false);
 
   useEffect(() => {
-    setQ(initialQuery ?? "");
+    setQ(initialQuery);
     setCat(initialCat ?? "");
     setBrand(initialBrand ?? "");
   }, [initialQuery, initialCat, initialBrand]);
@@ -112,12 +41,14 @@ export default function ProductsClient({
     let max = 0;
 
     for (const p of base) {
-      if (p.brand) brands.add(String(p.brand ?? ""));
-      if ((p as any).category) cats.add(String((p as any).category ?? ""));
+      if (p.brand) brands.add(String(p.brand));
+      if ((p as any).category) cats.add(normalizeCategory(String((p as any).category)));
+
       const eff =
         typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price
           ? (p.salePrice as number)
           : p.price;
+
       if (Number.isFinite(eff)) {
         min = Math.min(min, eff);
         max = Math.max(max, eff);
@@ -136,19 +67,26 @@ export default function ProductsClient({
   const filtered = useMemo(() => {
     let out = base.slice();
 
-    // fuzzy search
-    if (q) out = out.filter((p) => matches(p, q));
+    if (q) {
+      const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+      out = out.filter((p) =>
+        tokens.every((t) =>
+          [p.name ?? "", p.brand ?? "", (p as any).category ?? "", p.slug ?? ""]
+            .join(" ")
+            .toLowerCase()
+            .includes(t)
+        )
+      );
+    }
 
-    // strict category + brand (no guessing, just raw compare)
-    if (cat) out = out.filter((p) => norm((p as any).category ?? "") === norm(cat));
-    if (brand) out = out.filter((p) => norm(p.brand ?? "") === norm(brand));
+    if (cat) out = out.filter((p) => normalizeCategory((p as any).category ?? "") === cat);
+    if (brand) out = out.filter((p) => (p.brand ?? "").trim().toLowerCase() === brand);
 
-    // price range
     if (priceMin !== "" || priceMax !== "") {
       out = out.filter((p) => {
         const eff =
           typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price
-            ? p.salePrice
+            ? (p.salePrice as number)
             : p.price;
         if (priceMin !== "" && eff < Number(priceMin)) return false;
         if (priceMax !== "" && eff > Number(priceMax)) return false;
@@ -156,10 +94,24 @@ export default function ProductsClient({
       });
     }
 
-    if (stockOnly) out = out.filter((p) => (p.stock ?? 0) > 0);
+    out.sort((a, b) => {
+      const aIn = (a.stock ?? 0) > 0;
+      const bIn = (b.stock ?? 0) > 0;
+      if (aIn !== bIn) return aIn ? -1 : 1;
+
+      const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+      const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+      if (aSale !== bSale) return aSale ? -1 : 1;
+
+      const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (aTs !== bTs) return bTs - aTs;
+
+      return a.name.localeCompare(b.name);
+    });
 
     return out;
-  }, [base, q, cat, brand, priceMin, priceMax, stockOnly]);
+  }, [base, q, cat, brand, priceMin, priceMax]);
 
   const clearAll = useCallback(() => {
     setQ("");
@@ -167,13 +119,16 @@ export default function ProductsClient({
     setBrand("");
     setPriceMin("");
     setPriceMax("");
-    setStockOnly(false);
   }, []);
 
   return (
     <div className="site-container py-6">
-      {/* search + toggle row */}
-      <div className="flex justify-between items-center mb-4">
+      {/* Search bar */}
+      <div className="mb-4 flex justify-end">
+        <SearchBarComp className="max-w-xl" placeholder="Search products…" />
+      </div>
+
+      <div className="mb-4">
         <button
           type="button"
           className="btn-secondary"
@@ -183,7 +138,6 @@ export default function ProductsClient({
         >
           {open ? "Hide filters" : "Show filters"}
         </button>
-        <SearchBar initial={q} placeholder="Search products…" className="max-w-md" />
       </div>
 
       {open && (
@@ -192,7 +146,6 @@ export default function ProductsClient({
           className="mb-6 rounded-xl border border-slate-800 bg-[#0b1220] p-4"
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {/* category */}
             <label className="block text-sm text-slate-300">
               Category
               <select
@@ -209,7 +162,6 @@ export default function ProductsClient({
               </select>
             </label>
 
-            {/* brand */}
             <label className="block text-sm text-slate-300">
               Brand
               <select
@@ -226,40 +178,31 @@ export default function ProductsClient({
               </select>
             </label>
 
-            {/* price */}
-            <label className="block text-sm text-slate-300">
-              Min Price
-              <input
-                type="number"
-                value={priceMin === "" ? "" : priceMin}
-                onChange={(e) =>
-                  setPriceMin(e.target.value === "" ? "" : Number(e.target.value))
-                }
-                className="input mt-1 w-full"
-              />
-            </label>
-
-            <label className="block text-sm text-slate-300">
-              Max Price
-              <input
-                type="number"
-                value={priceMax === "" ? "" : priceMax}
-                onChange={(e) =>
-                  setPriceMax(e.target.value === "" ? "" : Number(e.target.value))
-                }
-                className="input mt-1 w-full"
-              />
-            </label>
-
-            {/* stock only */}
-            <label className="flex items-center gap-2 text-slate-300 mt-2">
-              <input
-                type="checkbox"
-                checked={stockOnly}
-                onChange={(e) => setStockOnly(e.target.checked)}
-              />
-              In stock only
-            </label>
+            <div>
+              <div className="text-sm text-slate-300">Price (LKR)</div>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={priceMin === "" ? "" : String(priceMin)}
+                  onChange={(e) =>
+                    setPriceMin(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  className="input"
+                  placeholder={`Min${facets.minPrice ? ` ≥ ${facets.minPrice}` : ""}`}
+                />
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={priceMax === "" ? "" : String(priceMax)}
+                  onChange={(e) =>
+                    setPriceMax(e.target.value === "" ? "" : Number(e.target.value))
+                  }
+                  className="input"
+                  placeholder={`Max${facets.maxPrice ? ` ≤ ${facets.maxPrice}` : ""}`}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="mt-4 flex gap-2">
@@ -273,7 +216,6 @@ export default function ProductsClient({
         </section>
       )}
 
-      {/* results */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-[#0b1220] p-6 text-slate-300">
           No products match your filters.
