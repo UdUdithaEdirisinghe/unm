@@ -5,7 +5,7 @@ export const revalidate = 0;
 import { getProducts, type Product } from "../../lib/products";
 import ProductsClient from "../../components/ProductsClient";
 
-/* ---------- utils (same as before) ---------- */
+/* ---------- utils ---------- */
 function norm(s: string) {
 return (s || "")
 .toLowerCase()
@@ -15,6 +15,7 @@ return (s || "")
 }
 const compact = (s: string) => norm(s).replace(/[\s\-_/\.]/g, "");
 
+/* ---------- Levenshtein (for fuzzy) ---------- */
 function levenshtein(a: string, b: string): number {
 const m = a.length,
 n = b.length;
@@ -26,12 +27,17 @@ for (let j = 0; j <= n; j++) dp[0][j] = j;
 for (let i = 1; i <= m; i++) {
 for (let j = 1; j <= n; j++) {
 const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+dp[i][j] = Math.min(
+dp[i - 1][j] + 1, // delete
+dp[i][j - 1] + 1, // insert
+dp[i - 1][j - 1] + cost // substitute
+);
 }
 }
 return dp[m][n];
 }
 
+/* ---------- token scoring (field-level) ---------- */
 function scoreTokenAgainstField(token: string, field: string): number {
 if (!token || !field) return 0;
 
@@ -42,12 +48,17 @@ const t = norm(token);
 const fC = compact(f);
 const tC = compact(t);
 
+// exact word
 if (words.includes(t)) return 1.0;
+// prefix word
 if (words.some((w) => w.startsWith(t))) return 0.8;
+// substring
 if (f.includes(t)) return 0.6;
+// missing-space tolerant (powerbank vs power bank)
 if (fC.includes(tC)) return 0.7;
 if (fC.startsWith(tC)) return 0.78;
 
+// lightweight fuzzy (<=1 edit) for words or compact form
 if (t.length >= 4) {
 for (const w of words) {
 if (Math.abs(w.length - t.length) > 1) continue;
@@ -62,6 +73,7 @@ if (d2 <= 1) return 0.7 - d2 * 0.08;
 return 0;
 }
 
+/* ---------- search (fields restricted to name/brand/category/slug) ---------- */
 function matches(product: Product, q: string) {
 const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
 if (tokens.length === 0) return true;
@@ -76,7 +88,24 @@ product.brand ?? "",
 return tokens.every((t) => haystacks.some((h) => scoreTokenAgainstField(t, h) > 0.55));
 }
 
-/* ---------- category helpers ---------- */
+/* ---------- sort helpers (unchanged) ---------- */
+function sortProducts(a: Product, b: Product) {
+const aIn = (a.stock ?? 0) > 0;
+const bIn = (b.stock ?? 0) > 0;
+if (aIn !== bIn) return aIn ? -1 : 1;
+
+const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+if (aSale !== bSale) return aSale ? -1 : 1;
+
+const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+if (aCreated !== bCreated) return bCreated - aCreated;
+
+return a.name.localeCompare(b.name);
+}
+
+/* ---------- category helpers (unchanged) ---------- */
 function slugify(s: string) {
 return (s || "")
 .toLowerCase()
@@ -102,55 +131,36 @@ return fallback || "others";
 function inferCategory(p: Product): string {
 const explicit = String(((p as any).category || (p as any).type || "")).trim();
 if (explicit) return normalizeCategoryName(explicit);
-const hay = [String(p?.name ?? ""), String((p as any).slug ?? "")].join(" ").toLowerCase();
+const hay = [String(p?.name ?? ""), String((p as any).slug ?? "")]
+.join(" ")
+.toLowerCase();
 return normalizeCategoryName(hay);
 }
 
 /* ---------- page ---------- */
-type PageProps = {
-searchParams?: {
-q?: string;
-cat?: string;
-brand?: string;
-min?: string;
-max?: string;
-stock?: string; // "in"
-sort?: string; // "popular" | "new" | "price-asc" | "price-desc"
-};
-};
+type PageProps = { searchParams?: { q?: string; cat?: string; brand?: string } };
 
 export default async function ProductsPage({ searchParams }: PageProps) {
 const all = await getProducts();
 
 const q = (searchParams?.q ?? "").trim();
 const cat = (searchParams?.cat ?? "").trim().toLowerCase();
+const brand = (searchParams?.brand ?? "").trim().toLowerCase();
 
 let filtered = all;
+
 if (q) filtered = filtered.filter((p) => matches(p, q));
 if (cat) filtered = filtered.filter((p) => inferCategory(p) === cat);
+if (brand) filtered = filtered.filter((p) => (p.brand ?? "").trim().toLowerCase() === brand);
 
-// initial sort for SSR
-filtered = filtered.slice().sort((a, b) => {
-const aIn = (a.stock ?? 0) > 0;
-const bIn = (b.stock ?? 0) > 0;
-if (aIn !== bIn) return aIn ? -1 : 1;
-const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-const bCreated = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-if (aCreated !== bCreated) return bCreated - aCreated;
-return a.name.localeCompare(b.name);
-});
+filtered = filtered.slice().sort(sortProducts);
 
 return (
 <ProductsClient
 products={filtered}
-initialQuery={q || undefined}
+initialQuery={q}
 initialCat={cat || undefined}
-// the rest are optional; allow undefined to avoid TS “string | undefined” issues
-initialBrand={searchParams?.brand}
-initialMin={searchParams?.min}
-initialMax={searchParams?.max}
-initialStock={searchParams?.stock === "in"}
-initialSort={searchParams?.sort}
+initialBrand={brand || undefined} // <-- pass brand to client UI
 />
 );
 }

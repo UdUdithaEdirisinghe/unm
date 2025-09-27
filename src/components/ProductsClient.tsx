@@ -1,213 +1,190 @@
 // src/components/ProductsClient.tsx
 "use client";
 
-import Link from "next/link";
-import Image from "next/image";
-import { useMemo, useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import type { Product } from "../lib/products";
-import { formatCurrency } from "../lib/format";
-
-/* ---------- helpers ---------- */
-type SortKey = "popular" | "new" | "price-asc" | "price-desc";
-
-function num(v: unknown, d = 0) {
-const n = Number(v);
-return Number.isFinite(n) ? n : d;
-}
-function clamp(n: number, lo: number, hi: number) {
-return Math.max(lo, Math.min(hi, n));
-}
-function inferCategory(p: Product) {
-const raw = (p.category || "").toString().trim().toLowerCase();
-if (raw) return raw;
-const s = `${p.name} ${p.slug}`.toLowerCase();
-if (s.includes("power") && s.includes("bank")) return "power-banks";
-if (/(charger|adapter|adaptor|gan)/.test(s)) return "chargers";
-if (/(cable|type c|lightning|usb)/.test(s)) return "cables";
-return "others";
-}
 
 type Props = {
 products: Product[];
 initialQuery?: string;
 initialCat?: string;
-initialBrand?: string | null | undefined;
-initialMin?: string | null | undefined;
-initialMax?: string | null | undefined;
-initialStock?: boolean | null | undefined;
-initialSort?: string | null | undefined;
+initialBrand?: string;
 };
 
-export default function ProductsClient({
-products,
-initialQuery,
-initialCat,
-initialBrand,
-initialMin,
-initialMax,
-initialStock,
-initialSort,
-}: Props) {
-const router = useRouter();
-const sp = useSearchParams();
-
-// facets built once from the server list
-const facets = useMemo(() => {
-const brands = new Set<string>();
-const cats = new Set<string>();
-let minPrice = Infinity;
-let maxPrice = 0;
-
-for (const p of products) {
-if (p.brand) brands.add(p.brand);
-cats.add(inferCategory(p));
-const effective = p.salePrice ?? p.price;
-minPrice = Math.min(minPrice, effective);
-maxPrice = Math.max(maxPrice, p.price);
+function norm(s: string) {
+return (s || "").toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim();
 }
-if (!isFinite(minPrice)) minPrice = 0;
-return {
-brands: Array.from(brands).sort(),
-cats: Array.from(cats).sort(),
-minPrice,
-maxPrice,
-};
-}, [products]);
 
-// -------- URL-seeded state (force to string to avoid TS unions) --------
-const [q, setQ] = useState<string>((sp.get("q") ?? initialQuery ?? "") || "");
-const [cat, setCat] = useState<string>((sp.get("cat") ?? initialCat ?? "") || "");
-const [brand, setBrand] = useState<string>((sp.get("brand") ?? initialBrand ?? "") || "");
-const [onlyInStock, setOnlyInStock] = useState<boolean>(
-(sp.get("stock") ?? (initialStock ? "in" : "")) === "in"
-);
-const [min, setMin] = useState<string>(
-(sp.get("min") ?? (initialMin ?? "")) || (facets.minPrice ? String(facets.minPrice) : "")
-);
-const [max, setMax] = useState<string>(
-(sp.get("max") ?? (initialMax ?? "")) || (facets.maxPrice ? String(facets.maxPrice) : "")
-);
-const [sort, setSort] = useState<SortKey>(
-((sp.get("sort") ?? initialSort) as SortKey) || "popular"
-);
-
-// sync URL with current filters (prevent hydration loops by comparing first)
-useEffect(() => {
-const next = new URLSearchParams();
-if (q.trim()) next.set("q", q.trim());
-if (cat) next.set("cat", cat);
-if (brand) next.set("brand", brand);
-if (min) next.set("min", String(clamp(num(min), 0, 9_999_999)));
-if (max) next.set("max", String(clamp(num(max), 0, 9_999_999)));
-if (onlyInStock) next.set("stock", "in");
-if (sort && sort !== "popular") next.set("sort", sort);
-
-const current = sp.toString();
-const desired = next.toString();
-if (current !== desired) {
-router.replace(desired ? `/products?${desired}` : "/products");
-}
-// eslint-disable-next-line react-hooks/exhaustive-deps
-}, [q, cat, brand, min, max, onlyInStock, sort]);
-
-// apply filters client-side
-const filtered = useMemo(() => {
-const lo = num(min, 0);
-const hi = num(max, Number.MAX_SAFE_INTEGER);
-
-let list = products.filter((p) => {
-const price = p.salePrice ?? p.price;
-if (onlyInStock && (p.stock ?? 0) <= 0) return false;
-if (cat && inferCategory(p) !== cat) return false;
-if (brand && (p.brand || "").toLowerCase() !== brand.toLowerCase()) return false;
-if (!(price >= lo && price <= hi)) return false;
-
-if (q.trim()) {
-const needle = q.trim().toLowerCase();
-const hay = [p.name, p.brand || "", p.slug, p.category || ""]
+/** basic token match that respects your original fields */
+function matches(p: Product, q: string) {
+const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+if (!tokens.length) return true;
+const hay = [p.name ?? "", p.brand ?? "", (p as any).category ?? "", (p as any).slug ?? ""]
+.map(String)
 .join(" ")
 .toLowerCase();
-if (!hay.includes(needle)) return false;
+return tokens.every((t) => hay.includes(t));
 }
-return true;
-});
 
-// sort
-list = list.slice().sort((a, b) => {
-if (sort === "new") {
-const aT = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-const bT = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-return bT - aT;
-}
-if (sort === "price-asc") {
-const ap = a.salePrice ?? a.price;
-const bp = b.salePrice ?? b.price;
-return ap - bp;
-}
-if (sort === "price-desc") {
-const ap = a.salePrice ?? a.price;
-const bp = b.salePrice ?? b.price;
-return bp - ap;
-}
-// "popular" fallback: in-stock first, then newest, then name
+/** same ordering semantics as your server helper */
+function sortForList(a: Product, b: Product) {
 const aIn = (a.stock ?? 0) > 0;
 const bIn = (b.stock ?? 0) > 0;
 if (aIn !== bIn) return aIn ? -1 : 1;
-const aT = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-const bT = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-if (aT !== bT) return bT - aT;
+
+const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+// ✅ fixed bug that caused “referenced in its own initializer”
+const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+if (aSale !== bSale) return aSale ? -1 : 1;
+
+const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+const bTs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+if (aTs !== bTs) return bTs - aTs;
+
 return a.name.localeCompare(b.name);
+}
+
+export default function ProductsClient({
+products,
+initialQuery = "",
+initialCat,
+initialBrand,
+}: Props) {
+// seed from props to avoid hydration mismatches
+const [q, setQ] = useState<string>(initialQuery);
+const [cat, setCat] = useState<string>(initialCat ?? "");
+const [brand, setBrand] = useState<string>(initialBrand ?? "");
+const [open, setOpen] = useState<boolean>(false);
+const [priceMin, setPriceMin] = useState<number | "">("");
+const [priceMax, setPriceMax] = useState<number | "">("");
+
+useEffect(() => {
+setQ(initialQuery);
+setCat(initialCat ?? "");
+setBrand(initialBrand ?? "");
+}, [initialQuery, initialCat, initialBrand]);
+
+// facets from current list (safe guards everywhere)
+const facets = useMemo(() => {
+const list: Product[] = Array.isArray(products) ? products : [];
+const brands = new Set<string>();
+const cats = new Set<string>();
+let min = Number.POSITIVE_INFINITY;
+let max = 0;
+
+for (const p of list) {
+if (p.brand) brands.add(String(p.brand));
+if ((p as any).category) cats.add(String((p as any).category));
+const eff =
+typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price
+? (p.salePrice as number)
+: p.price;
+if (Number.isFinite(eff)) {
+min = Math.min(min, eff);
+max = Math.max(max, eff);
+}
+}
+if (!Number.isFinite(min)) min = 0;
+
+return {
+brands: Array.from(brands).sort(),
+cats: Array.from(cats).sort(),
+minPrice: min,
+maxPrice: max,
+};
+}, [products]);
+
+// apply client filters (keeps SSR result consistent; no window usage)
+const filtered = useMemo(() => {
+let out: Product[] = (Array.isArray(products) ? products : []).slice();
+
+if (q) out = out.filter((p) => matches(p, q));
+if (cat) out = out.filter((p) => norm((p as any).category ?? "") === norm(cat));
+if (brand) out = out.filter((p) => norm(p.brand ?? "") === norm(brand));
+
+if (priceMin !== "" || priceMax !== "") {
+out = out.filter((p) => {
+const eff =
+typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price
+? (p.salePrice as number)
+: p.price;
+if (priceMin !== "" && eff < Number(priceMin)) return false;
+if (priceMax !== "" && eff > Number(priceMax)) return false;
+return true;
 });
+}
 
-return list;
-}, [products, q, cat, brand, min, max, onlyInStock, sort]);
+return out.sort(sortForList);
+}, [products, q, cat, brand, priceMin, priceMax]);
 
-const clearAll = () => {
+const clearAll = useCallback(() => {
 setQ("");
 setCat("");
 setBrand("");
-setOnlyInStock(false);
-setMin(facets.minPrice ? String(facets.minPrice) : "");
-setMax(facets.maxPrice ? String(facets.maxPrice) : "");
-setSort("popular");
-};
+setPriceMin("");
+setPriceMax("");
+}, []);
 
 return (
-<div className="grid grid-cols-1 gap-6 lg:grid-cols-[260px,1fr]">
-{/* ================== Filters ================== */}
-<aside className="panel border border-slate-800/60 bg-[rgba(10,15,28,0.4)] rounded-lg p-4">
-<div className="mb-4">
+<div className="site-container py-6">
+{/* top bar */}
+<div className="mb-4 flex items-center justify-between gap-3">
+<button
+type="button"
+className="btn-secondary"
+onClick={() => setOpen((v) => !v)}
+aria-expanded={open}
+aria-controls="filters-panel"
+>
+{open ? "Hide filters" : "Show filters"}
+</button>
+<div className="text-sm text-slate-300">
+{filtered.length} item{filtered.length === 1 ? "" : "s"}
+</div>
+</div>
+
+{/* dropdown filters */}
+{open && (
+<section
+id="filters-panel"
+className="mb-6 rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.45)] p-4"
+>
+<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+{/* search */}
+<label className="block text-sm text-slate-300">
+Search
 <input
 value={q}
 onChange={(e) => setQ(e.target.value)}
-placeholder="Search…"
-className="input w-full"
+className="input mt-1 w-full"
+placeholder="Search products…"
 />
-</div>
+</label>
 
-<div className="mb-4">
-<label className="block text-sm text-slate-300 mb-1">Category</label>
+{/* category */}
+<label className="block text-sm text-slate-300">
+Category
 <select
-className="select w-full"
 value={cat}
 onChange={(e) => setCat(e.target.value)}
+className="select mt-1 w-full"
 >
 <option value="">All</option>
 {facets.cats.map((c) => (
 <option key={c} value={c}>
-{c.replace(/-/g, " ")}
+{c}
 </option>
 ))}
 </select>
-</div>
+</label>
 
-<div className="mb-4">
-<label className="block text-sm text-slate-300 mb-1">Brand</label>
+{/* brand */}
+<label className="block text-sm text-slate-300">
+Brand
 <select
-className="select w-full"
 value={brand}
 onChange={(e) => setBrand(e.target.value)}
+className="select mt-1 w-full"
 >
 <option value="">All</option>
 {facets.brands.map((b) => (
@@ -216,111 +193,89 @@ onChange={(e) => setBrand(e.target.value)}
 </option>
 ))}
 </select>
-</div>
-
-<div className="mb-4 flex items-center gap-2">
-<input
-id="stock"
-type="checkbox"
-checked={onlyInStock}
-onChange={(e) => setOnlyInStock(e.target.checked)}
-/>
-<label htmlFor="stock" className="text-sm text-slate-300">
-In stock only
 </label>
-</div>
 
-<div className="mb-4">
-<label className="block text-sm text-slate-300 mb-1">Price (LKR)</label>
-<div className="flex items-center gap-2">
+{/* price */}
+<div>
+<div className="text-sm text-slate-300">Price (LKR)</div>
+<div className="mt-1 grid grid-cols-2 gap-2">
 <input
 inputMode="numeric"
-className="input w-full"
-placeholder={String(facets.minPrice || 0)}
-value={min}
-onChange={(e) => setMin(e.target.value.replace(/[^\d]/g, ""))}
+pattern="[0-9]*"
+value={priceMin === "" ? "" : String(priceMin)}
+onChange={(e) =>
+setPriceMin(e.target.value === "" ? "" : Number(e.target.value))
+}
+className="input"
+placeholder={`Min${facets.minPrice ? ` ≥ ${facets.minPrice}` : ""}`}
 />
-<span className="text-slate-400">—</span>
 <input
 inputMode="numeric"
-className="input w-full"
-placeholder={String(facets.maxPrice || 0)}
-value={max}
-onChange={(e) => setMax(e.target.value.replace(/[^\d]/g, ""))}
+pattern="[0-9]*"
+value={priceMax === "" ? "" : String(priceMax)}
+onChange={(e) =>
+setPriceMax(e.target.value === "" ? "" : Number(e.target.value))
+}
+className="input"
+placeholder={`Max${facets.maxPrice ? ` ≤ ${facets.maxPrice}` : ""}`}
 />
 </div>
 </div>
-
-<div className="mb-5">
-<label className="block text-sm text-slate-300 mb-1">Sort by</label>
-<select
-className="select w-full"
-value={sort}
-onChange={(e) => setSort(e.target.value as SortKey)}
->
-<option value="popular">Popular</option>
-<option value="new">Newest</option>
-<option value="price-asc">Price: Low → High</option>
-<option value="price-desc">Price: High → Low</option>
-</select>
 </div>
 
-<button type="button" className="btn-ghost w-full" onClick={clearAll}>
-Clear filters
+<div className="mt-4 flex gap-2">
+<button type="button" className="btn-primary" onClick={() => setOpen(false)}>
+Apply
 </button>
-</aside>
+<button type="button" className="btn-ghost" onClick={clearAll}>
+Clear
+</button>
+</div>
+</section>
+)}
 
-{/* ================== Results ================== */}
-<section>
+{/* product grid — same palette/components you already use */}
 {filtered.length === 0 ? (
-<div className="panel rounded-lg border border-slate-800/60 p-8 text-slate-300">
-No matching products.
+<div className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.35)] p-6 text-slate-300">
+No products match your filters.
 </div>
 ) : (
-<ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+<ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
 {filtered.map((p) => {
-const price =
-p.salePrice && p.salePrice > 0 && p.salePrice < p.price ? p.salePrice : p.price;
-const onSale = p.salePrice && p.salePrice > 0 && p.salePrice < p.price;
-const out = (p.stock ?? 0) <= 0;
-const img = p.images?.[0] || p.image || "/placeholder.png";
+const img = (p.images?.[0] || p.image) ?? "/placeholder.png";
+const eff =
+typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price
+? (p.salePrice as number)
+: p.price;
 
 return (
 <li
 key={p.id}
-className="card rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.45)] overflow-hidden"
+className="rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)] p-3"
 >
-<Link href={`/products/${p.slug}`} className="block">
-<div className="aspect-[4/3] bg-white flex items-center justify-center">
-<Image
+<a href={`/products/${p.slug}`} className="block">
+{/* eslint-disable-next-line @next/next/no-img-element */}
+<img
 src={img}
 alt={p.name}
-width={600}
-height={450}
-className="object-contain"
+className="h-40 w-full rounded object-contain bg-white"
 />
+<div className="mt-3">
+<p className="line-clamp-2 text-sm font-medium text-white">{p.name}</p>
+<p className="mt-1 text-sm text-slate-300">
+{Intl.NumberFormat("en-LK", {
+style: "currency",
+currency: "LKR",
+maximumFractionDigits: 0,
+}).format(eff)}
+</p>
 </div>
-<div className="p-3">
-<h3 className="line-clamp-2 font-semibold text-white">{p.name}</h3>
-<div className="mt-2 flex items-baseline gap-2">
-<span className="text-white font-bold">{formatCurrency(price)}</span>
-{onSale && (
-<span className="text-slate-400 line-through text-sm">
-{formatCurrency(p.price)}
-</span>
-)}
-</div>
-{out && (
-<div className="mt-2 text-xs font-semibold text-rose-400">Out of stock</div>
-)}
-</div>
-</Link>
+</a>
 </li>
 );
 })}
 </ul>
 )}
-</section>
 </div>
 );
 }
