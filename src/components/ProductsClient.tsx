@@ -4,13 +4,14 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 import type { Product } from "../lib/products";
 import SearchBar from "./SearchBar";
 import ProductCard from "./ProductCard";
+import Fuse from "fuse.js";   // <-- added
 
 /* ------------------------------ Types ------------------------------ */
 type Props = {
   products: Product[];
   initialQuery?: string;
-  initialCat?: string;   // normalised slug (e.g., "power-banks")
-  initialBrand?: string; // lowercased brand
+  initialCat?: string;
+  initialBrand?: string;
 };
 
 /* ------------------------------ Local utils ------------------------------ */
@@ -18,7 +19,7 @@ function safeStr(v: unknown): string {
   return String(v ?? "").trim();
 }
 
-// kept local (no server import)
+// kept local
 function slugify(s: string) {
   return (s || "")
     .toLowerCase()
@@ -62,14 +63,14 @@ export default function ProductsClient({
   const [priceMax, setPriceMax] = useState<number | "">("");
   const [stockOnly, setStockOnly] = useState<boolean>(false);
 
-  // keep in sync with URL
+  // sync with URL
   useEffect(() => {
     setQ(initialQuery);
     setCat(initialCat ?? "");
     setBrand(initialBrand ?? "");
   }, [initialQuery, initialCat, initialBrand]);
 
-  // Facets (normalized categories + brands)
+  // Facets
   const facets = useMemo(() => {
     const catSet = new Set<string>();
     const brandSet = new Set<string>();
@@ -100,27 +101,26 @@ export default function ProductsClient({
     };
   }, [base]);
 
+  // Fuse instance (memoized)
+  const fuse = useMemo(() => {
+    return new Fuse(base, {
+      keys: ["name", "brand", "category", "slug"],
+      threshold: 0.35, // smaller = stricter, larger = fuzzier
+      distance: 100,
+    });
+  }, [base]);
+
   // Filter + sort
   const filtered = useMemo(() => {
     let out = base.slice();
 
-    // search (exact substring)
+    // 🔍 fuzzy search
     if (q) {
-      const term = safeStr(q).toLowerCase();
-      out = out.filter((p) => {
-        const hay = [
-          safeStr(p.name),
-          safeStr(p.brand),
-          safeStr((p as any).category ?? (p as any).type),
-          safeStr((p as any).slug),
-        ]
-          .join(" ")
-          .toLowerCase();
-        return hay.includes(term);
-      });
+      const results = fuse.search(q);
+      out = results.map(r => r.item);
     }
 
-    // category (normalized)
+    // category
     if (cat) {
       out = out.filter((p) => {
         const inferred = inferCategory(p);
@@ -129,7 +129,7 @@ export default function ProductsClient({
       });
     }
 
-    // brand (exact)
+    // brand
     if (brand) {
       const b = brand.toLowerCase();
       out = out.filter((p) => safeStr(p.brand).toLowerCase() === b);
@@ -151,16 +151,14 @@ export default function ProductsClient({
     // stock
     if (stockOnly) out = out.filter((p) => (p.stock ?? 0) > 0);
 
-    // sort (in-stock → on-sale → newest → name)
+    // sort
     out.sort((a, b) => {
       const aIn = (a.stock ?? 0) > 0;
       const bIn = (b.stock ?? 0) > 0;
       if (aIn !== bIn) return aIn ? -1 : 1;
 
-      const aSale =
-        typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
-      const bSale =
-        typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+      const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+      const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
       if (aSale !== bSale) return aSale ? -1 : 1;
 
       const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -171,9 +169,9 @@ export default function ProductsClient({
     });
 
     return out;
-  }, [base, q, cat, brand, priceMin, priceMax, stockOnly]);
+  }, [base, q, cat, brand, priceMin, priceMax, stockOnly, fuse]);
 
-  // Clear all filters
+  // Clear filters
   const clearAll = useCallback(() => {
     setQ("");
     setCat("");
@@ -199,10 +197,9 @@ export default function ProductsClient({
 
   return (
     <div className="site-container py-6 space-y-4">
-      {/* header row – search on the RIGHT */}
+      {/* header row */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-white">{title}</h1>
-
         <div className="flex w-full items-center gap-3 sm:w-auto">
           <SearchBar initial={q} placeholder="Search products…" className="w-full sm:w-[420px]" />
           <button
@@ -217,7 +214,7 @@ export default function ProductsClient({
         </div>
       </div>
 
-      {/* filters dropdown */}
+      {/* filters */}
       {open && (
         <section id="filters-panel" className="rounded-xl border border-slate-800 bg-[#0b1220] p-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -232,7 +229,6 @@ export default function ProductsClient({
                 ))}
               </select>
             </label>
-
             <label className="block text-sm text-slate-300">
               Brand
               <select value={brand} onChange={(e) => setBrand(e.target.value)} className="select mt-1 w-full">
@@ -244,7 +240,6 @@ export default function ProductsClient({
                 ))}
               </select>
             </label>
-
             <div>
               <div className="text-sm text-slate-300">Price (LKR)</div>
               <div className="mt-1 grid grid-cols-2 gap-2">
@@ -266,13 +261,11 @@ export default function ProductsClient({
                 />
               </div>
             </div>
-
             <label className="mt-6 inline-flex items-center gap-2 text-sm text-slate-300">
               <input type="checkbox" checked={stockOnly} onChange={(e) => setStockOnly(e.target.checked)} />
               In stock only
             </label>
           </div>
-
           <div className="mt-4 flex gap-2">
             <button type="button" className="btn-primary" onClick={() => setOpen(false)}>
               Apply
@@ -284,7 +277,7 @@ export default function ProductsClient({
         </section>
       )}
 
-      {/* grid – equal-height cards */}
+      {/* grid */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-[#0b1220] p-6 text-slate-300">
           No products match your filters.
