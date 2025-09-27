@@ -153,9 +153,12 @@ export default async function HomePage() {
             See all →
           </Link>
         </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {/* Only change: stretch grid + wrapper div for equal card heights */}
+        <div className="grid grid-cols-2 items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((p) => (
-            <ProductCard key={(p as any).id} product={p} />
+            <div key={(p as any).id} className="h-full">
+              <ProductCard product={p} />
+            </div>
           ))}
         </div>
       </section>

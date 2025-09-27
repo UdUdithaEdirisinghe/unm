@@ -4,55 +4,21 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 import type { Product } from "../lib/products";
 import SearchBar from "./SearchBar";
 import ProductCard from "./ProductCard";
+import {
+  normalizeCategoryName,
+  inferCategory,
+  safeStr,
+  sortProducts,
+  prettyCat,
+} from "../lib/catalog";
 
-/* ------------------------------ LOCAL HELPERS (client-safe) ------------------------------ */
-
-// keep identical slug mapping as on the server page, but local so no server imports here
-function slugify(s: string) {
-  return (s || "")
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^\w\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-");
-}
-
-function normalizeCategoryName(raw: string): string {
-  const s = (raw || "").trim().toLowerCase();
-
-  if (/power\s*-?\s*bank/.test(s)) return "power-banks";
-  if (/(charger|adaptor|adapter|gan|wall\s*charger|car\s*charger)/.test(s)) return "chargers";
-  if (/(cable|usb|type\s*-?\s*c|lightning|micro\s*-?\s*usb)/.test(s)) return "cables";
-  if (/(backpack|bag|sleeve|pouch|case)/.test(s)) return "bags";
-  if (/(earbud|headphone|headset|speaker|audio)/.test(s)) return "audio";
-
-  const fallback = slugify(raw);
-  return fallback || "others";
-}
-
-function inferCategory(p: Product): string {
-  const explicit = String(((p as any).category || (p as any).type || "")).trim();
-  if (explicit) return normalizeCategoryName(explicit);
-
-  const hay = [String(p?.name ?? ""), String((p as any).slug ?? "")]
-    .join(" ")
-    .toLowerCase();
-  return normalizeCategoryName(hay);
-}
-
-function safeStr(v: unknown): string {
-  return String(v ?? "").trim();
-}
-
-/* --------------------------------- Props --------------------------------- */
 type Props = {
   products: Product[];
   initialQuery?: string;
-  initialCat?: string;   // normalized slug (e.g., "power-banks")
-  initialBrand?: string; // lowercased brand string
+  initialCat?: string;   // normalised slug (e.g. "power-banks")
+  initialBrand?: string; // lowercased brand
 };
 
-/* -------------------------------- Component ------------------------------- */
 export default function ProductsClient({
   products,
   initialQuery = "",
@@ -61,7 +27,7 @@ export default function ProductsClient({
 }: Props) {
   const base: Product[] = Array.isArray(products) ? products : [];
 
-  // state
+  // UI State
   const [q, setQ] = useState<string>(initialQuery);
   const [open, setOpen] = useState<boolean>(false);
   const [cat, setCat] = useState<string>(initialCat ?? "");
@@ -70,14 +36,14 @@ export default function ProductsClient({
   const [priceMax, setPriceMax] = useState<number | "">("");
   const [stockOnly, setStockOnly] = useState<boolean>(false);
 
-  // keep in sync if route searchParams change
+  // Sync with URL changes
   useEffect(() => {
     setQ(initialQuery);
     setCat(initialCat ?? "");
     setBrand(initialBrand ?? "");
   }, [initialQuery, initialCat, initialBrand]);
 
-  // facets
+  // Facets
   const facets = useMemo(() => {
     const catSet = new Set<string>();
     const brandSet = new Set<string>();
@@ -85,7 +51,7 @@ export default function ProductsClient({
     let max = 0;
 
     for (const p of base) {
-      catSet.add(inferCategory(p));
+      catSet.add(inferCategory(p)); // normalised
       const b = safeStr(p.brand);
       if (b) brandSet.add(b);
 
@@ -108,11 +74,10 @@ export default function ProductsClient({
     };
   }, [base]);
 
-  // derived products
+  // Filtered list
   const filtered = useMemo(() => {
     let out = base.slice();
 
-    // exact substring search across key fields (no fuzzy)
     if (q) {
       const term = safeStr(q).toLowerCase();
       out = out.filter((p) => {
@@ -128,7 +93,6 @@ export default function ProductsClient({
       });
     }
 
-    // category
     if (cat) {
       out = out.filter((p) => {
         const inferred = inferCategory(p);
@@ -137,13 +101,11 @@ export default function ProductsClient({
       });
     }
 
-    // brand (exact)
     if (brand) {
       const b = brand.toLowerCase();
       out = out.filter((p) => safeStr(p.brand).toLowerCase() === b);
     }
 
-    // price range
     if (priceMin !== "" || priceMax !== "") {
       out = out.filter((p) => {
         const eff =
@@ -156,30 +118,12 @@ export default function ProductsClient({
       });
     }
 
-    // stock only
     if (stockOnly) out = out.filter((p) => (p.stock ?? 0) > 0);
 
-    // sort: in-stock → on-sale → newest → name
-    out.sort((a, b) => {
-      const aIn = (a.stock ?? 0) > 0;
-      const bIn = (b.stock ?? 0) > 0;
-      if (aIn !== bIn) return aIn ? -1 : 1;
-
-      const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
-      const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
-      if (aSale !== bSale) return aSale ? -1 : 1;
-
-      const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-      const bTs = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-      if (aTs !== bTs) return bTs - aTs;
-
-      return a.name.localeCompare(b.name);
-    });
-
+    out.sort(sortProducts);
     return out;
   }, [base, q, cat, brand, priceMin, priceMax, stockOnly]);
 
-  // clear
   const clearAll = useCallback(() => {
     setQ("");
     setCat("");
@@ -189,24 +133,14 @@ export default function ProductsClient({
     setStockOnly(false);
   }, []);
 
-  // title
-  const pretty: Record<string, string> = {
-    "power-banks": "Power Banks",
-    chargers: "Chargers & Adapters",
-    cables: "Cables",
-    bags: "Bags & Sleeves",
-    audio: "Audio",
-    others: "Tech Accessories",
-  };
   const title =
-    cat && pretty[cat]
-      ? `Best prices on ${pretty[cat]} in Sri Lanka`
+    cat && prettyCat[cat]
+      ? `Best prices on ${prettyCat[cat]} in Sri Lanka`
       : "Best prices on Tech Accessories in Sri Lanka";
 
-  /* ----------------------------------- UI ---------------------------------- */
   return (
     <div className="site-container py-6 space-y-4">
-      {/* Title row with search on the RIGHT (unchanged palette/layout) */}
+      {/* Title + actions (Search on RIGHT, palette unchanged) */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-white">{title}</h1>
 
@@ -228,7 +162,7 @@ export default function ProductsClient({
         </div>
       </div>
 
-      {/* Dropdown filters (unchanged styling) */}
+      {/* Filters dropdown */}
       {open && (
         <section
           id="filters-panel"
@@ -245,7 +179,7 @@ export default function ProductsClient({
                 <option value="">All</option>
                 {facets.cats.map((c) => (
                   <option key={c} value={c}>
-                    {pretty[c] ?? c}
+                    {prettyCat[c] ?? c}
                   </option>
                 ))}
               </select>
@@ -314,16 +248,18 @@ export default function ProductsClient({
         </section>
       )}
 
-      {/* Grid (uses your existing ProductCard & styles) */}
+      {/* Grid – stretch items so all ProductCard heights align, no style changes */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-[#0b1220] p-6 text-slate-300">
           No products match your filters.
         </div>
       ) : (
-        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <ul className="grid grid-cols-2 items-stretch gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {filtered.map((p) => (
-            <li key={p.id}>
-              <ProductCard product={p} />
+            <li key={p.id} className="h-full">
+              <div className="h-full">
+                <ProductCard product={p} />
+              </div>
             </li>
           ))}
         </ul>
