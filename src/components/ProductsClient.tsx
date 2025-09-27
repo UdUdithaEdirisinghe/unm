@@ -5,16 +5,83 @@ import type { Product } from "../lib/products";
 import SearchBar from "./SearchBar";
 import ProductCard from "./ProductCard";
 
+/* ---------- utils ---------- */
+function norm(s: string) {
+  return (s || "").toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim();
+}
+const compact = (s: string) => norm(s).replace(/[\s\-_/\.]/g, "");
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+    }
+  }
+  return dp[m][n];
+}
+
+function scoreTokenAgainstField(token: string, field: string): number {
+  if (!token || !field) return 0;
+  const f = norm(field);
+  const words = f.split(" ").filter(Boolean);
+  const t = norm(token);
+  const fC = compact(f);
+  const tC = compact(t);
+
+  if (words.includes(t)) return 1.0;
+  if (words.some((w) => w.startsWith(t))) return 0.8;
+  if (f.includes(t)) return 0.6;
+  if (fC.includes(tC)) return 0.7;
+  if (fC.startsWith(tC)) return 0.78;
+
+  if (t.length >= 4) {
+    for (const w of words) {
+      if (Math.abs(w.length - t.length) > 1) continue;
+      const d = levenshtein(t, w);
+      if (d <= 1) return 0.72 - d * 0.1;
+    }
+    if (Math.abs(fC.length - tC.length) <= 1) {
+      const d2 = levenshtein(tC, fC);
+      if (d2 <= 1) return 0.7 - d2 * 0.08;
+    }
+  }
+  return 0;
+}
+
+function matches(product: Product, q: string) {
+  const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+
+  const haystacks: string[] = [
+    product.name ?? "",
+    product.brand ?? "",
+    (product as any).category ?? (product as any).type ?? "",
+    product.slug ?? "",
+  ].map((s) => String(s ?? ""));
+
+  return tokens.every((t) =>
+    haystacks.some((h) => scoreTokenAgainstField(t, h) > 0.55)
+  );
+}
+
+/* ---------- component ---------- */
 type Props = {
   products: Product[];
   initialQuery?: string;
   initialCat?: string;
   initialBrand?: string;
 };
-
-function norm(s: string) {
-  return (s || "").toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim();
-}
 
 export default function ProductsClient({
   products,
@@ -47,12 +114,10 @@ export default function ProductsClient({
     for (const p of base) {
       if (p.brand) brands.add(String(p.brand ?? ""));
       if ((p as any).category) cats.add(String((p as any).category ?? ""));
-
       const eff =
         typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price
           ? (p.salePrice as number)
           : p.price;
-
       if (Number.isFinite(eff)) {
         min = Math.min(min, eff);
         max = Math.max(max, eff);
@@ -71,21 +136,14 @@ export default function ProductsClient({
   const filtered = useMemo(() => {
     let out = base.slice();
 
-    if (q) {
-      const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
-      out = out.filter((p) =>
-        tokens.every((t) =>
-          [p.name ?? "", p.brand ?? "", (p as any).category ?? "", p.slug ?? ""]
-            .join(" ")
-            .toLowerCase()
-            .includes(t)
-        )
-      );
-    }
+    // fuzzy search
+    if (q) out = out.filter((p) => matches(p, q));
 
+    // strict category + brand (no guessing, just raw compare)
     if (cat) out = out.filter((p) => norm((p as any).category ?? "") === norm(cat));
     if (brand) out = out.filter((p) => norm(p.brand ?? "") === norm(brand));
 
+    // price range
     if (priceMin !== "" || priceMax !== "") {
       out = out.filter((p) => {
         const eff =
@@ -168,7 +226,7 @@ export default function ProductsClient({
               </select>
             </label>
 
-            {/* price min */}
+            {/* price */}
             <label className="block text-sm text-slate-300">
               Min Price
               <input
@@ -181,7 +239,6 @@ export default function ProductsClient({
               />
             </label>
 
-            {/* price max */}
             <label className="block text-sm text-slate-300">
               Max Price
               <input
