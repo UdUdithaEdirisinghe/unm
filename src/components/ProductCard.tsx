@@ -1,4 +1,3 @@
-// src/components/ProductCard.tsx
 "use client";
 
 import Image from "next/image";
@@ -26,9 +25,7 @@ const salePrice = product.salePrice;
 const stock = product.stock ?? 0;
 const outOfStock = stock <= 0;
 const hasSale =
-typeof salePrice === "number" &&
-salePrice > 0 &&
-salePrice < product.price;
+typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
 
 const priceToUse = hasSale ? (salePrice as number) : product.price;
 const discountPct =
@@ -38,14 +35,17 @@ hasSale && salePrice
 
 const handleAddToCart = () => {
 add(
-{ id: product.id, name: product.name, price: priceToUse, image: primary, slug: product.slug },
+{
+id: product.id,
+name: product.name,
+price: priceToUse,
+image: primary,
+slug: product.slug,
+},
 1
 );
 toast.success(`${product.name} added to cart!`);
 };
-
-const brandLabel = (product.brand ?? "").trim();
-const categoryLabel = String((product as any).category ?? "").trim();
 
 return (
 <div className="relative flex h-full flex-col rounded-xl bg-[#0b1220] border border-slate-800 p-4 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
@@ -80,30 +80,38 @@ className="object-contain max-h-48"
 </div>
 </Link>
 
-{/* 📄 text (fixed order) */}
-<div className="mt-3 flex min-h-0 flex-col">
-{/* 1) Name */}
+{/* 📄 text (reserved heights to align cards) */}
+<div className="mt-3">
+{/* title: clamp to 3 lines and reserve space ~3 lines so heights match */}
 <Link
 href={`/products/${product.slug}`}
-className="block text-white font-medium leading-snug line-clamp-2 hover:text-[#6574ff]"
 title={product.name}
+className="block text-white font-medium leading-snug hover:text-[#6574ff] line-clamp-3 min-h-[3.75rem]"
 >
 {product.name}
 </Link>
 
-{/* 2) Brand */}
-{brandLabel && (
-<div className="mt-1 text-xs text-slate-400 truncate">{brandLabel}</div>
+{/* brand + category: reserve exactly 2 lines even if one/both missing */}
+<div className="mt-1 space-y-0.5 min-h-[2.0rem]">
+{product.brand ? (
+<div className="text-xs text-slate-400 truncate">{product.brand}</div>
+) : (
+// invisible placeholder keeps height without showing text
+<div className="text-xs opacity-0 select-none">.</div>
 )}
 
-{/* 3) Category */}
-{categoryLabel && (
-<div className="text-xs text-slate-500 truncate">{categoryLabel}</div>
-)}
-
-{/* 4) Guaranteed visible gap before price (uniform height across cards) */}
-<div className="mt-2 min-h-[10px] flex-1" />
+{(product as any).category ? (
+<div className="text-xs text-slate-500 truncate">
+{(product as any).category}
 </div>
+) : (
+<div className="text-xs opacity-0 select-none">.</div>
+)}
+</div>
+</div>
+
+{/* spacer pushes price/button to the bottom uniformly */}
+<div className="flex-1" />
 
 {/* 💰 price */}
 <div className="mt-2 flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
@@ -117,10 +125,12 @@ title={product.name}
 )}
 </div>
 
-{/* 🛒 button */}
+{/* 🛒 add to cart */}
 <div className="mt-3">
 <button
-className={`btn-primary w-full ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
+className={`btn-primary w-full ${
+outOfStock ? "opacity-50 cursor-not-allowed" : ""
+}`}
 disabled={outOfStock}
 onClick={handleAddToCart}
 >
