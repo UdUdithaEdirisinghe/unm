@@ -13,7 +13,7 @@ type Props = { product: Product };
 export default function ProductCard({ product }: Props) {
 const { add } = useCart();
 
-// pick primary image safely (keeps your palette & sizes)
+// primary image (unchanged)
 const primary = (() => {
 const src =
 (Array.isArray(product.images) && product.images[0]) ||
@@ -49,13 +49,12 @@ slug: product.slug,
 toast.success(`${product.name} added to cart!`);
 };
 
-// use original labels you already store (no normalization)
 const brandLabel = (product.brand ?? "").trim();
-const categoryLabel = (String((product as any).category ?? "")).trim();
+const categoryLabel = String((product as any).category ?? "").trim();
 
 return (
-<div className="relative flex flex-col rounded-xl bg-[#0b1220] border border-slate-800 p-4 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
-{/* 🔖 badges */}
+<div className="relative flex h-full flex-col rounded-xl bg-[#0b1220] border border-slate-800 p-4 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
+{/* 🔖 badges (unchanged) */}
 <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
 {outOfStock && (
 <span className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white shadow">
@@ -69,7 +68,7 @@ Out of stock
 )}
 </div>
 
-{/* 📸 image */}
+{/* 📸 image (unchanged) */}
 <Link
 href={`/products/${product.slug}`}
 className="block rounded-lg overflow-hidden border border-slate-700 bg-slate-900/40"
@@ -86,18 +85,9 @@ className="object-contain max-h-48"
 </div>
 </Link>
 
-{/* 📄 text (brand + category moved ABOVE name) */}
-<div className="mt-3 flex-1">
-{(brandLabel || categoryLabel) && (
-<div className="mb-1 text-xs text-slate-400">
-{brandLabel && <span className="truncate">{brandLabel}</span>}
-{brandLabel && categoryLabel && <span className="mx-1">•</span>}
-{categoryLabel && (
-<span className="truncate text-slate-500">{categoryLabel}</span>
-)}
-</div>
-)}
-
+{/* 📄 text in requested order */}
+<div className="mt-3 flex min-h-0 flex-col">
+{/* 1) Name */}
 <Link
 href={`/products/${product.slug}`}
 className="block text-white font-medium leading-snug line-clamp-2 hover:text-[#6574ff]"
@@ -105,6 +95,19 @@ title={product.name}
 >
 {product.name}
 </Link>
+
+{/* 2) Brand */}
+{brandLabel && (
+<div className="mt-1 text-xs text-slate-400 truncate">{brandLabel}</div>
+)}
+
+{/* 3) Category */}
+{categoryLabel && (
+<div className="text-xs text-slate-500 truncate">{categoryLabel}</div>
+)}
+
+{/* 4) Spacer to align cards regardless of text length */}
+<div className="flex-1" />
 </div>
 
 {/* 💰 price */}
@@ -119,7 +122,7 @@ title={product.name}
 )}
 </div>
 
-{/* 🛒 add to cart button */}
+{/* 🛒 button */}
 <div className="mt-3">
 <button
 className={`btn-primary w-full ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
