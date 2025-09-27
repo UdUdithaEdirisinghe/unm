@@ -2,8 +2,7 @@
 
 import { useMemo, useState, useEffect, useCallback } from "react";
 import type { Product } from "../lib/products";
-import { normalizeCategory } from "../lib/categories";
-import SearchBarComp from "./SearchBar";
+import SearchBar from "./SearchBar";
 import ProductCard from "./ProductCard";
 
 type Props = {
@@ -12,6 +11,10 @@ type Props = {
   initialCat?: string;
   initialBrand?: string;
 };
+
+function norm(s: string) {
+  return (s || "").toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g, "").trim();
+}
 
 export default function ProductsClient({
   products,
@@ -42,13 +45,11 @@ export default function ProductsClient({
 
     for (const p of base) {
       if (p.brand) brands.add(String(p.brand));
-      if ((p as any).category) cats.add(normalizeCategory(String((p as any).category)));
-
+      if ((p as any).category) cats.add(String((p as any).category));
       const eff =
         typeof p.salePrice === "number" && p.salePrice > 0 && p.salePrice < p.price
           ? (p.salePrice as number)
           : p.price;
-
       if (Number.isFinite(eff)) {
         min = Math.min(min, eff);
         max = Math.max(max, eff);
@@ -79,8 +80,8 @@ export default function ProductsClient({
       );
     }
 
-    if (cat) out = out.filter((p) => normalizeCategory((p as any).category ?? "") === cat);
-    if (brand) out = out.filter((p) => (p.brand ?? "").trim().toLowerCase() === brand);
+    if (cat) out = out.filter((p) => norm((p as any).category ?? "") === norm(cat));
+    if (brand) out = out.filter((p) => norm(p.brand ?? "") === norm(brand));
 
     if (priceMin !== "" || priceMax !== "") {
       out = out.filter((p) => {
@@ -123,15 +124,16 @@ export default function ProductsClient({
 
   return (
     <div className="site-container py-6">
-      {/* Search bar */}
-      <div className="mb-4 flex justify-end">
-        <SearchBarComp className="max-w-xl" placeholder="Search products…" />
-      </div>
-
-      <div className="mb-4">
+      {/* Search + Show filters aligned */}
+      <div className="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <SearchBar
+          initial={q}
+          placeholder="Search products…"
+          className="flex-1"
+        />
         <button
           type="button"
-          className="btn-secondary"
+          className="btn-secondary sm:w-auto w-full"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls="filters-panel"
@@ -146,6 +148,7 @@ export default function ProductsClient({
           className="mb-6 rounded-xl border border-slate-800 bg-[#0b1220] p-4"
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Category */}
             <label className="block text-sm text-slate-300">
               Category
               <select
@@ -162,6 +165,7 @@ export default function ProductsClient({
               </select>
             </label>
 
+            {/* Brand */}
             <label className="block text-sm text-slate-300">
               Brand
               <select
@@ -178,6 +182,7 @@ export default function ProductsClient({
               </select>
             </label>
 
+            {/* Price */}
             <div>
               <div className="text-sm text-slate-300">Price (LKR)</div>
               <div className="mt-1 grid grid-cols-2 gap-2">
@@ -221,9 +226,9 @@ export default function ProductsClient({
           No products match your filters.
         </div>
       ) : (
-        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+        <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
           {filtered.map((p) => (
-            <li key={p.id}>
+            <li key={p.id} className="flex">
               <ProductCard product={p} />
             </li>
           ))}

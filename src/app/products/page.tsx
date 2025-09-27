@@ -44,8 +44,7 @@ function norm(s: string) {
 const compact = (s: string) => norm(s).replace(/[\s\-_/\.]/g, "");
 
 function levenshtein(a: string, b: string): number {
-  const m = a.length,
-    n = b.length;
+  const m = a.length, n = b.length;
   if (m === 0) return n;
   if (n === 0) return m;
   const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
@@ -101,9 +100,7 @@ function matches(product: Product, q: string) {
     (product as any).category ?? (product as any).type ?? "",
     (product as any).slug ?? "",
   ].map((s) => String(s));
-  return tokens.every((t) =>
-    haystacks.some((h) => scoreTokenAgainstField(t, h) > 0.55)
-  );
+  return tokens.every((t) => haystacks.some((h) => scoreTokenAgainstField(t, h) > 0.55));
 }
 
 function sortProducts(a: Product, b: Product) {
@@ -111,10 +108,8 @@ function sortProducts(a: Product, b: Product) {
   const bIn = (b.stock ?? 0) > 0;
   if (aIn !== bIn) return aIn ? -1 : 1;
 
-  const aSale =
-    typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
-  const bSale =
-    typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+  const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+  const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
   if (aSale !== bSale) return aSale ? -1 : 1;
 
   const aCreated = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -141,12 +136,28 @@ export default async function ProductsPage({ searchParams }: PageProps) {
 
   filtered = filtered.slice().sort(sortProducts);
 
+  // Category heading
+  const categoryHeadings: Record<string, string> = {
+    "power-banks": "Best prices on Power Banks in Sri Lanka",
+    chargers: "Best prices on Chargers & Adapters in Sri Lanka",
+    cables: "Best prices on Cables in Sri Lanka",
+    bags: "Best prices on Bags & Sleeves in Sri Lanka",
+    audio: "Best prices on Audio Products in Sri Lanka",
+    others: "Best prices on Tech Accessories in Sri Lanka",
+  };
+  const heading = cat ? categoryHeadings[cat] ?? "" : "";
+
   return (
-    <ProductsClient
-      products={filtered}
-      initialQuery={q}
-      initialCat={cat || undefined}
-      initialBrand={brand || undefined}
-    />
+    <>
+      {heading && (
+        <h1 className="mb-6 text-2xl font-bold text-white text-center">{heading}</h1>
+      )}
+      <ProductsClient
+        products={filtered}
+        initialQuery={q}
+        initialCat={cat || undefined}
+        initialBrand={brand || undefined}
+      />
+    </>
   );
 }
