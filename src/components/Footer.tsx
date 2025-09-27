@@ -76,7 +76,7 @@ export default function Footer() {
             <div className="mt-3 flex items-center justify-center gap-4 md:justify-start">
               {/* Instagram */}
               <a
-                href="https://instagram.com/"
+                href="https://instagram.com/@manny.lk.store"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Instagram"
