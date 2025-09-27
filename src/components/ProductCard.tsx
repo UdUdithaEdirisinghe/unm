@@ -12,7 +12,6 @@ type Props = { product: Product };
 export default function ProductCard({ product }: Props) {
 const { add } = useCart();
 
-// Primary image (keeps your current behavior)
 const primary = (() => {
 const src =
 (Array.isArray(product.images) && product.images[0]) ||
@@ -51,8 +50,8 @@ toast.success(`${product.name} added to cart!`);
 };
 
 return (
-<div className="relative flex h-full flex-col rounded-xl bg-[#0b1220] border border-slate-800 p-4 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
-{/* badges */}
+<div className="relative flex flex-col rounded-xl bg-[#0b1220] border border-slate-800 p-4 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
+{/* 🔖 badges */}
 <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
 {outOfStock && (
 <span className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white shadow">
@@ -66,7 +65,7 @@ Out of stock
 )}
 </div>
 
-{/* image */}
+{/* 📸 image */}
 <Link
 href={`/products/${product.slug}`}
 className="block rounded-lg overflow-hidden border border-slate-700 bg-slate-900/40"
@@ -83,40 +82,31 @@ className="object-contain max-h-48"
 </div>
 </Link>
 
-{/* text */}
-<div className="mt-3">
-{/* Title – clamp with a *small* reserved height so rows align without big gaps */}
+{/* 📄 text section */}
+<div className="mt-3 flex flex-col flex-1">
+{/* Product name */}
 <Link
 href={`/products/${product.slug}`}
+className="block text-white font-medium leading-snug line-clamp-2 hover:text-[#6574ff]"
 title={product.name}
-className="block text-white font-medium leading-snug hover:text-[#6574ff] line-clamp-3 min-h-[3.6rem]"
 >
 {product.name}
 </Link>
 
-{/* Brand & Category directly under title.
-We keep a tiny reserved height; if one is missing,
-we drop an invisible placeholder so cards still align. */}
-<div className="mt-1 space-y-0.5 min-h-[1.5rem]">
-{product.brand ? (
-<div className="text-xs text-slate-400 truncate">{product.brand}</div>
-) : (
-<div aria-hidden className="text-xs opacity-0 select-none">.</div>
+{/* Brand + category (always directly under name) */}
+{product.brand && (
+<div className="mt-0.5 text-xs text-slate-400">{product.brand}</div>
 )}
-{(product as any).category ? (
-<div className="text-xs text-slate-500 truncate">
+{(product as any).category && (
+<div className="text-xs text-slate-500">
 {(product as any).category}
 </div>
-) : (
-<div aria-hidden className="text-xs opacity-0 select-none">.</div>
 )}
-</div>
-</div>
 
-{/* push footer down uniformly */}
+{/* Spacer pushes price + button down, equalizing card heights */}
 <div className="flex-1" />
 
-{/* price */}
+{/* 💰 price */}
 <div className="mt-2 flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
 <p className="text-lg font-semibold text-white">
 {formatCurrency(priceToUse)}
@@ -128,17 +118,18 @@ we drop an invisible placeholder so cards still align. */}
 )}
 </div>
 
-{/* button */}
+{/* 🛒 add to cart button */}
 <div className="mt-3">
 <button
-onClick={handleAddToCart}
-disabled={outOfStock}
 className={`btn-primary w-full ${
 outOfStock ? "opacity-50 cursor-not-allowed" : ""
 }`}
+disabled={outOfStock}
+onClick={handleAddToCart}
 >
 {outOfStock ? "Unavailable" : "Add to Cart"}
 </button>
+</div>
 </div>
 </div>
 );
