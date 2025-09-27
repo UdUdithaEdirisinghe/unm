@@ -97,7 +97,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
 
   let filtered = all.slice();
 
-  // ❌ removed server-side text filter so Fuse.js in ProductsClient can handle fuzzy search
+  // ⛔ Do NOT filter by q on the server — let Fuse.js in ProductsClient handle fuzzy search
   // if (q) filtered = filtered.filter((p) => matches(p, q));
 
   if (catSlug) {
