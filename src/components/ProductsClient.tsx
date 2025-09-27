@@ -4,22 +4,55 @@ import { useMemo, useState, useEffect, useCallback } from "react";
 import type { Product } from "../lib/products";
 import SearchBar from "./SearchBar";
 import ProductCard from "./ProductCard";
-import { normalizeCategoryName, inferCategory } from "../app/products/page"; // reuse same logic
 
-/* ------------------------------ Types ------------------------------ */
-type Props = {
-  products: Product[];
-  initialQuery?: string;
-  initialCat?: string;   // normalised slug (e.g., "power-banks")
-  initialBrand?: string; // lowercased brand string
-};
+/* ------------------------------ LOCAL HELPERS (client-safe) ------------------------------ */
 
-/* ------------------------------ Utils ------------------------------ */
+// keep identical slug mapping as on the server page, but local so no server imports here
+function slugify(s: string) {
+  return (s || "")
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[^\w\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
+function normalizeCategoryName(raw: string): string {
+  const s = (raw || "").trim().toLowerCase();
+
+  if (/power\s*-?\s*bank/.test(s)) return "power-banks";
+  if (/(charger|adaptor|adapter|gan|wall\s*charger|car\s*charger)/.test(s)) return "chargers";
+  if (/(cable|usb|type\s*-?\s*c|lightning|micro\s*-?\s*usb)/.test(s)) return "cables";
+  if (/(backpack|bag|sleeve|pouch|case)/.test(s)) return "bags";
+  if (/(earbud|headphone|headset|speaker|audio)/.test(s)) return "audio";
+
+  const fallback = slugify(raw);
+  return fallback || "others";
+}
+
+function inferCategory(p: Product): string {
+  const explicit = String(((p as any).category || (p as any).type || "")).trim();
+  if (explicit) return normalizeCategoryName(explicit);
+
+  const hay = [String(p?.name ?? ""), String((p as any).slug ?? "")]
+    .join(" ")
+    .toLowerCase();
+  return normalizeCategoryName(hay);
+}
+
 function safeStr(v: unknown): string {
   return String(v ?? "").trim();
 }
 
-/* ----------------------------- Component --------------------------- */
+/* --------------------------------- Props --------------------------------- */
+type Props = {
+  products: Product[];
+  initialQuery?: string;
+  initialCat?: string;   // normalized slug (e.g., "power-banks")
+  initialBrand?: string; // lowercased brand string
+};
+
+/* -------------------------------- Component ------------------------------- */
 export default function ProductsClient({
   products,
   initialQuery = "",
@@ -28,7 +61,7 @@ export default function ProductsClient({
 }: Props) {
   const base: Product[] = Array.isArray(products) ? products : [];
 
-  // UI state
+  // state
   const [q, setQ] = useState<string>(initialQuery);
   const [open, setOpen] = useState<boolean>(false);
   const [cat, setCat] = useState<string>(initialCat ?? "");
@@ -37,14 +70,14 @@ export default function ProductsClient({
   const [priceMax, setPriceMax] = useState<number | "">("");
   const [stockOnly, setStockOnly] = useState<boolean>(false);
 
-  // keep in sync if server-provided searchParams change during nav
+  // keep in sync if route searchParams change
   useEffect(() => {
     setQ(initialQuery);
     setCat(initialCat ?? "");
     setBrand(initialBrand ?? "");
   }, [initialQuery, initialCat, initialBrand]);
 
-  // Facets (normalised categories + real brands)
+  // facets
   const facets = useMemo(() => {
     const catSet = new Set<string>();
     const brandSet = new Set<string>();
@@ -52,7 +85,7 @@ export default function ProductsClient({
     let max = 0;
 
     for (const p of base) {
-      catSet.add(inferCategory(p)); // already normalised
+      catSet.add(inferCategory(p));
       const b = safeStr(p.brand);
       if (b) brandSet.add(b);
 
@@ -68,18 +101,18 @@ export default function ProductsClient({
     if (!Number.isFinite(min)) min = 0;
 
     return {
-      cats: Array.from(catSet).sort(),           // "power-banks", "chargers", …
-      brands: Array.from(brandSet).sort(),       // exact brand labels
+      cats: Array.from(catSet).sort(),
+      brands: Array.from(brandSet).sort(),
       minPrice: min,
       maxPrice: max,
     };
   }, [base]);
 
-  // Derived visible list
+  // derived products
   const filtered = useMemo(() => {
     let out = base.slice();
 
-    // search (exact substring across key fields)
+    // exact substring search across key fields (no fuzzy)
     if (q) {
       const term = safeStr(q).toLowerCase();
       out = out.filter((p) => {
@@ -95,7 +128,7 @@ export default function ProductsClient({
       });
     }
 
-    // category (normalised)
+    // category
     if (cat) {
       out = out.filter((p) => {
         const inferred = inferCategory(p);
@@ -110,7 +143,7 @@ export default function ProductsClient({
       out = out.filter((p) => safeStr(p.brand).toLowerCase() === b);
     }
 
-    // price
+    // price range
     if (priceMin !== "" || priceMax !== "") {
       out = out.filter((p) => {
         const eff =
@@ -123,19 +156,17 @@ export default function ProductsClient({
       });
     }
 
-    // stock
+    // stock only
     if (stockOnly) out = out.filter((p) => (p.stock ?? 0) > 0);
 
-    // sort (in-stock → on-sale → newest → name)
+    // sort: in-stock → on-sale → newest → name
     out.sort((a, b) => {
       const aIn = (a.stock ?? 0) > 0;
       const bIn = (b.stock ?? 0) > 0;
       if (aIn !== bIn) return aIn ? -1 : 1;
 
-      const aSale =
-        typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
-      const bSale =
-        typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
+      const aSale = typeof a.salePrice === "number" && a.salePrice > 0 && a.salePrice < a.price;
+      const bSale = typeof b.salePrice === "number" && b.salePrice > 0 && b.salePrice < b.price;
       if (aSale !== bSale) return aSale ? -1 : 1;
 
       const aTs = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -148,7 +179,7 @@ export default function ProductsClient({
     return out;
   }, [base, q, cat, brand, priceMin, priceMax, stockOnly]);
 
-  // Clear all filters
+  // clear
   const clearAll = useCallback(() => {
     setQ("");
     setCat("");
@@ -158,7 +189,7 @@ export default function ProductsClient({
     setStockOnly(false);
   }, []);
 
-  // Dynamic page title line
+  // title
   const pretty: Record<string, string> = {
     "power-banks": "Power Banks",
     chargers: "Chargers & Adapters",
@@ -172,10 +203,10 @@ export default function ProductsClient({
       ? `Best prices on ${pretty[cat]} in Sri Lanka`
       : "Best prices on Tech Accessories in Sri Lanka";
 
-  /* ------------------------------ UI ------------------------------ */
+  /* ----------------------------------- UI ---------------------------------- */
   return (
     <div className="site-container py-6 space-y-4">
-      {/* Title + actions row (keep palette/layout; search at RIGHT) */}
+      {/* Title row with search on the RIGHT (unchanged palette/layout) */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-xl font-semibold text-white">{title}</h1>
 
@@ -197,7 +228,7 @@ export default function ProductsClient({
         </div>
       </div>
 
-      {/* Filters dropdown */}
+      {/* Dropdown filters (unchanged styling) */}
       {open && (
         <section
           id="filters-panel"
@@ -283,7 +314,7 @@ export default function ProductsClient({
         </section>
       )}
 
-      {/* Grid */}
+      {/* Grid (uses your existing ProductCard & styles) */}
       {filtered.length === 0 ? (
         <div className="rounded-xl border border-slate-800 bg-[#0b1220] p-6 text-slate-300">
           No products match your filters.
