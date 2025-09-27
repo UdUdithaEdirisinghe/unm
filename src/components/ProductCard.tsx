@@ -37,20 +37,14 @@ hasSale && salePrice
 
 const handleAddToCart = () => {
 add(
-{
-id: product.id,
-name: product.name,
-price: priceToUse,
-image: primary,
-slug: product.slug,
-},
+{ id: product.id, name: product.name, price: priceToUse, image: primary, slug: product.slug },
 1
 );
 toast.success(`${product.name} added to cart!`);
 };
 
 return (
-<div className="relative flex flex-col rounded-xl bg-[#0b1220] border border-slate-800 p-4 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
+<div className="relative flex h-full flex-col rounded-xl bg-[#0b1220] border border-slate-800 p-4 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
 {/* 🔖 badges */}
 <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
 {outOfStock && (
@@ -82,9 +76,8 @@ className="object-contain max-h-48"
 </div>
 </Link>
 
-{/* 📄 text section */}
-<div className="mt-3 flex flex-col flex-1">
-{/* Product name */}
+{/* 📄 text */}
+<div className="mt-3 flex-1">
 <Link
 href={`/products/${product.slug}`}
 className="block text-white font-medium leading-snug line-clamp-2 hover:text-[#6574ff]"
@@ -92,22 +85,16 @@ title={product.name}
 >
 {product.name}
 </Link>
-
-{/* Brand + category (always directly under name) */}
 {product.brand && (
-<div className="mt-0.5 text-xs text-slate-400">{product.brand}</div>
+<div className="mt-0.5 text-xs text-slate-400 truncate">{product.brand}</div>
 )}
 {(product as any).category && (
-<div className="text-xs text-slate-500">
-{(product as any).category}
-</div>
+<div className="text-xs text-slate-500 truncate">{(product as any).category}</div>
 )}
+</div>
 
-{/* Spacer pushes price + button down, equalizing card heights */}
-<div className="flex-1" />
-
-{/* 💰 price */}
-<div className="mt-2 flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
+{/* 💰 price (pinned to bottom) */}
+<div className="mt-auto flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
 <p className="text-lg font-semibold text-white">
 {formatCurrency(priceToUse)}
 </p>
@@ -121,15 +108,12 @@ title={product.name}
 {/* 🛒 add to cart button */}
 <div className="mt-3">
 <button
-className={`btn-primary w-full ${
-outOfStock ? "opacity-50 cursor-not-allowed" : ""
-}`}
+className={`btn-primary w-full ${outOfStock ? "opacity-50 cursor-not-allowed" : ""}`}
 disabled={outOfStock}
 onClick={handleAddToCart}
 >
 {outOfStock ? "Unavailable" : "Add to Cart"}
 </button>
-</div>
 </div>
 </div>
 );
