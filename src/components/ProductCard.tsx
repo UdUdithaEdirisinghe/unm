@@ -13,7 +13,6 @@ type Props = { product: Product };
 export default function ProductCard({ product }: Props) {
 const { add } = useCart();
 
-// primary image (unchanged)
 const primary = (() => {
 const src =
 (Array.isArray(product.images) && product.images[0]) ||
@@ -27,7 +26,9 @@ const salePrice = product.salePrice;
 const stock = product.stock ?? 0;
 const outOfStock = stock <= 0;
 const hasSale =
-typeof salePrice === "number" && salePrice > 0 && salePrice < product.price;
+typeof salePrice === "number" &&
+salePrice > 0 &&
+salePrice < product.price;
 
 const priceToUse = hasSale ? (salePrice as number) : product.price;
 const discountPct =
@@ -37,13 +38,7 @@ hasSale && salePrice
 
 const handleAddToCart = () => {
 add(
-{
-id: product.id,
-name: product.name,
-price: priceToUse,
-image: primary,
-slug: product.slug,
-},
+{ id: product.id, name: product.name, price: priceToUse, image: primary, slug: product.slug },
 1
 );
 toast.success(`${product.name} added to cart!`);
@@ -54,7 +49,7 @@ const categoryLabel = String((product as any).category ?? "").trim();
 
 return (
 <div className="relative flex h-full flex-col rounded-xl bg-[#0b1220] border border-slate-800 p-4 shadow-md transition hover:-translate-y-0.5 hover:shadow-lg">
-{/* 🔖 badges (unchanged) */}
+{/* 🔖 badges */}
 <div className="absolute top-3 left-3 z-10 flex flex-col gap-2">
 {outOfStock && (
 <span className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white shadow">
@@ -68,7 +63,7 @@ Out of stock
 )}
 </div>
 
-{/* 📸 image (unchanged) */}
+{/* 📸 image */}
 <Link
 href={`/products/${product.slug}`}
 className="block rounded-lg overflow-hidden border border-slate-700 bg-slate-900/40"
@@ -85,7 +80,7 @@ className="object-contain max-h-48"
 </div>
 </Link>
 
-{/* 📄 text in requested order */}
+{/* 📄 text (fixed order) */}
 <div className="mt-3 flex min-h-0 flex-col">
 {/* 1) Name */}
 <Link
@@ -106,8 +101,8 @@ title={product.name}
 <div className="text-xs text-slate-500 truncate">{categoryLabel}</div>
 )}
 
-{/* 4) Spacer to align cards regardless of text length */}
-<div className="flex-1" />
+{/* 4) Guaranteed visible gap before price (uniform height across cards) */}
+<div className="mt-2 min-h-[10px] flex-1" />
 </div>
 
 {/* 💰 price */}
