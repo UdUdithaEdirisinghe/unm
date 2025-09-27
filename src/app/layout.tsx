@@ -1,5 +1,5 @@
 // src/app/layout.tsx
-import { Analytics } from "@vercel/analytics/next"
+import { Analytics } from "@vercel/analytics/next";
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
 import Navbar from "../components/Navbar";
@@ -31,12 +31,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" className="h-full">
-      {/* extra links help some stubborn UAs; harmless elsewhere */}
       <head>
         <link rel="icon" type="image/png" sizes="16x16" href={FV} />
         <link rel="icon" type="image/png" sizes="32x32" href={FV} />
         <link rel="icon" type="image/png" href={FV} />
-        {/* remove if you didn't add the ICO */}
         <link rel="shortcut icon" href={ICO} />
         <link rel="apple-touch-icon" href={APPLE} />
       </head>
@@ -53,6 +51,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             routes={["/","/products","/products/","/products/*","/about","/contact","/policies","/faq","/facts","/cart"]}
           />
         </CartProvider>
+
+        {/* ✅ Vercel Analytics (required to collect page views) */}
+        <Analytics />
       </body>
     </html>
   );
