@@ -1,3 +1,4 @@
+// src/app/products/page.tsx
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -88,7 +89,7 @@ export default async function ProductsPage({ searchParams }: PageProps) {
 
   const q = safeStr(searchParams?.q ?? "");
 
-  // IMPORTANT FIX: only normalize the category IF a cat value was provided.
+  // Only normalize category if provided
   const rawCat = safeStr(searchParams?.cat ?? "");
   const catSlug = rawCat ? normalizeCategoryName(rawCat) : "";
 
@@ -96,7 +97,8 @@ export default async function ProductsPage({ searchParams }: PageProps) {
 
   let filtered = all.slice();
 
-  if (q) filtered = filtered.filter((p) => matches(p, q));
+  // ❌ removed server-side text filter so Fuse.js in ProductsClient can handle fuzzy search
+  // if (q) filtered = filtered.filter((p) => matches(p, q));
 
   if (catSlug) {
     filtered = filtered.filter((p) => {
