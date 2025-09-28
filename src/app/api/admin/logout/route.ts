@@ -1,18 +1,30 @@
+// src/app/api/admin/logout/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { CSRF_COOKIE_NAME, verifyCsrfToken } from "../../../../lib/csrf";
+import crypto from "crypto";
 
 const COOKIE = "manny_admin";
+const CSRF_COOKIE = "manny_csrf";
 
 export async function POST(req: NextRequest) {
-  // Require CSRF for logout too
-  const headerToken = String(req.headers.get("x-csrf-token") || "");
-  const cookieToken = req.cookies.get(CSRF_COOKIE_NAME)?.value || "";
-  const okCsrf = headerToken && cookieToken && headerToken === cookieToken && verifyCsrfToken(headerToken);
-  if (!okCsrf) {
-    return NextResponse.json({ message: "Invalid CSRF token" }, { status: 403 });
+  const csrfHeader = req.headers.get("x-csrf-token") || "";
+  const csrfCookie = req.cookies.get(CSRF_COOKIE)?.value || "";
+
+  if (
+    !csrfHeader ||
+    !csrfCookie ||
+    !crypto.timingSafeEqual(Buffer.from(csrfHeader), Buffer.from(csrfCookie))
+  ) {
+    return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(COOKIE, "", { httpOnly: true, path: "/", maxAge: 0, secure: true, sameSite: "strict" });
+  // expire the admin cookie
+  res.cookies.set(COOKIE, "", {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  });
   return res;
 }
