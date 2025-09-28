@@ -1,6 +1,8 @@
 // next.config.ts
 import type { NextConfig } from "next";
 
+const isProd = process.env.NODE_ENV === "production";
+
 const nextConfig: NextConfig = {
   // ✅ let the build succeed even if TS has errors
   typescript: {
@@ -28,19 +30,42 @@ const nextConfig: NextConfig = {
       // },
     ],
   },
-  // ✅ add cache-control headers for static files like favicon
+  // ✅ add cache-control headers for static files + security headers
   async headers() {
-    return [
-      {
-        source: "/:all*(ico|png|svg|jpg|jpeg|webp)",
+    const headers = [];
+
+    // 1) Security headers (HSTS preload-ready + extras) only in production
+    if (isProd) {
+      headers.push({
+        source: "/(.*)",
         headers: [
           {
-            key: "Cache-Control",
-            value: "public, max-age=0, must-revalidate", 
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains; preload",
+          },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          {
+            key: "Permissions-Policy",
+            value: "geolocation=(), camera=(), microphone=()",
           },
         ],
-      },
-    ];
+      });
+    }
+
+    // 2) Your existing static cache rule (unchanged)
+    headers.push({
+      source: "/:all*(ico|png|svg|jpg|jpeg|webp)",
+      headers: [
+        {
+          key: "Cache-Control",
+          value: "public, max-age=0, must-revalidate",
+        },
+      ],
+    });
+
+    return headers;
   },
 };
 
