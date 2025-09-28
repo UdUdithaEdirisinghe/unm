@@ -1,51 +1,19 @@
-// src/app/admin/login/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { secureFetch } from "../../../lib/secureFetch";  // ✅ add this
 
 export default function AdminLoginPage() {
   const [pwd, setPwd] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
-  const [csrf, setCsrf] = useState("");
-
-  // 1) Ensure the CSRF cookie exists and grab the token
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        // this GET should set Set-Cookie: manny_csrf=... if missing
-        const res = await fetch("/api/csrf", { credentials: "include" });
-        if (!res.ok) throw new Error("csrf init failed");
-        const data = await res.json();
-        if (!cancelled) setCsrf(String(data?.token || ""));
-      } catch {
-        if (!cancelled) setMsg("Couldn't initialize security token. Refresh the page.");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setMsg(null);
-
-    if (!csrf) {
-      setMsg("Security token missing. Please refresh the page.");
-      return;
-    }
-
-    const res = await fetch("/api/admin/login", {
+    const res = await secureFetch("/api/admin/login", {   // ✅ use secureFetch
       method: "POST",
-      credentials: "include",         // <- include cookies
-      headers: {
-        "Content-Type": "application/json",
-        "x-csrf-token": csrf,          // <- attach token
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: pwd }),
     });
-
     if (res.ok) {
       window.location.href = "/admin";
     } else {

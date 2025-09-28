@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Product, Order, OrderStatus } from "../../lib/products";
 import type { Promo } from "../../lib/promos";
 import type { StoreCredit } from "../../lib/storeCredits";
-
+import { secureFetch } from "../../lib/secureFetch";
 /* ——— util ——— */
 function fmtLKR(n: number) {
   const safe = Number.isFinite(n) ? n : 0;
@@ -300,7 +300,7 @@ export default function AdminPage() {
   }
 
   async function logout() {
-    await fetch("/api/admin/logout", { method: "POST" });
+    await secureFetch("/api/admin/logout", { method: "POST" });
     location.href = "/admin/login";
   }
 
