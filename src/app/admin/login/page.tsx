@@ -1,63 +1,55 @@
+// src/app/admin/login/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function AdminLoginPage() {
   const [pwd, setPwd] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
-  const [csrf, setCsrf] = useState<string>("");   // CSRF token
-  const [busy, setBusy] = useState(false);
+  const [csrf, setCsrf] = useState("");
 
-  // Fetch CSRF on mount
+  // 1) Ensure the CSRF cookie exists and grab the token
   useEffect(() => {
-    let live = true;
+    let cancelled = false;
     (async () => {
       try {
-        const r = await fetch("/api/admin/csrf", { method: "GET", cache: "no-store" });
-        const j = await r.json();
-        if (live && j?.token) setCsrf(String(j.token));
+        // this GET should set Set-Cookie: manny_csrf=... if missing
+        const res = await fetch("/api/csrf", { credentials: "include" });
+        if (!res.ok) throw new Error("csrf init failed");
+        const data = await res.json();
+        if (!cancelled) setCsrf(String(data?.token || ""));
       } catch {
-        // show nothing; server route will still reject without token
+        if (!cancelled) setMsg("Couldn't initialize security token. Refresh the page.");
       }
     })();
-    return () => { live = false; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
 
-    const password = (pwd || "").slice(0, 200); // simple length cap
-    if (!password) {
-      setMsg("Password is required.");
-      return;
-    }
     if (!csrf) {
       setMsg("Security token missing. Please refresh the page.");
       return;
     }
 
-    setBusy(true);
-    try {
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrf,                 // send token in header
-        },
-        body: JSON.stringify({ password }),
-      });
+    const res = await fetch("/api/admin/login", {
+      method: "POST",
+      credentials: "include",         // <- include cookies
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrf,          // <- attach token
+      },
+      body: JSON.stringify({ password: pwd }),
+    });
 
-      if (res.ok) {
-        window.location.href = "/admin";
-      } else {
-        const j = await res.json().catch(() => ({}));
-        setMsg(j?.message || "Invalid password.");
-      }
-    } catch {
-      setMsg("Network error, try again.");
-    } finally {
-      setBusy(false);
+    if (res.ok) {
+      window.location.href = "/admin";
+    } else {
+      setMsg("Invalid password.");
     }
   }
 
@@ -73,12 +65,11 @@ export default function AdminLoginPage() {
           className="field w-full"
           placeholder="Password"
           value={pwd}
-          autoComplete="current-password"
           onChange={(e) => setPwd(e.target.value)}
         />
         {msg && <p className="mt-2 text-sm text-rose-400">{msg}</p>}
-        <button type="submit" className="btn-primary mt-4 w-full" disabled={busy}>
-          {busy ? "Signing in…" : "Login"}
+        <button type="submit" className="btn-primary mt-4 w-full">
+          Login
         </button>
       </form>
     </div>
