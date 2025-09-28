@@ -1,22 +1,63 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function AdminLoginPage() {
   const [pwd, setPwd] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
+  const [csrf, setCsrf] = useState<string>("");   // CSRF token
+  const [busy, setBusy] = useState(false);
+
+  // Fetch CSRF on mount
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        const r = await fetch("/api/admin/csrf", { method: "GET", cache: "no-store" });
+        const j = await r.json();
+        if (live && j?.token) setCsrf(String(j.token));
+      } catch {
+        // show nothing; server route will still reject without token
+      }
+    })();
+    return () => { live = false; };
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const res = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: pwd }),
-    });
-    if (res.ok) {
-      window.location.href = "/admin";
-    } else {
-      setMsg("Invalid password.");
+    setMsg(null);
+
+    const password = (pwd || "").slice(0, 200); // simple length cap
+    if (!password) {
+      setMsg("Password is required.");
+      return;
+    }
+    if (!csrf) {
+      setMsg("Security token missing. Please refresh the page.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-csrf-token": csrf,                 // send token in header
+        },
+        body: JSON.stringify({ password }),
+      });
+
+      if (res.ok) {
+        window.location.href = "/admin";
+      } else {
+        const j = await res.json().catch(() => ({}));
+        setMsg(j?.message || "Invalid password.");
+      }
+    } catch {
+      setMsg("Network error, try again.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -32,11 +73,12 @@ export default function AdminLoginPage() {
           className="field w-full"
           placeholder="Password"
           value={pwd}
+          autoComplete="current-password"
           onChange={(e) => setPwd(e.target.value)}
         />
         {msg && <p className="mt-2 text-sm text-rose-400">{msg}</p>}
-        <button type="submit" className="btn-primary mt-4 w-full">
-          Login
+        <button type="submit" className="btn-primary mt-4 w-full" disabled={busy}>
+          {busy ? "Signing in…" : "Login"}
         </button>
       </form>
     </div>

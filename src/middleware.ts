@@ -5,7 +5,7 @@ const COOKIE = "manny_admin";
 export function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
 
-  // protect /admin (but allow /admin/login and /api/admin/*)
+  // Protect /admin (but allow /admin/login)
   if (path.startsWith("/admin") && !path.startsWith("/admin/login")) {
     const authed = req.cookies.get(COOKIE)?.value === "1";
     if (!authed) {
@@ -14,6 +14,8 @@ export function middleware(req: NextRequest) {
       return NextResponse.redirect(url);
     }
   }
+
+  // NOTE: /api/admin/csrf is intentionally NOT blocked by middleware.
 
   return NextResponse.next();
 }
