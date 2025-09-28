@@ -102,7 +102,7 @@ export default function Footer() {
 
               {/* TikTok */}
               <a
-                href="https://www.tiktok.com/"
+                href="https://www.tiktok.com/@manny.lk?_t=ZS-906KAXtcG4f&_r=1"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="TikTok"
