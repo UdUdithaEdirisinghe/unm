@@ -6,24 +6,27 @@ import { useEffect, useState } from "react";
 export default function AdminLoginPage() {
   const [pwd, setPwd] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
-  const [csrf, setCsrf] = useState<string>("");      // ✅ hold CSRF token
+  const [csrf, setCsrf] = useState<string>("");
   const [loading, setLoading] = useState(false);
 
-  // Get CSRF token once the page loads
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const res = await fetch("/api/csrf", { credentials: "include" });
-        if (!res.ok) throw new Error("Failed to fetch CSRF");
-        const data = await res.json();
-        if (mounted) setCsrf(String(data.token || ""));
+        const res = await fetch("/api/csrf", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error("failed");
+        const { token } = await res.json();
+        if (mounted) setCsrf(String(token || ""));
       } catch {
-        // Friendly message if CSRF endpoint is unreachable
-        if (mounted) setMsg("Could not initialize secure session. Please refresh and try again.");
+        if (mounted) setMsg("Could not initialize secure session. Please refresh.");
       }
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   async function onSubmit(e: React.FormEvent) {
@@ -41,16 +44,15 @@ export default function AdminLoginPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-csrf-token": csrf,                 // ✅ send CSRF
+          "x-csrf-token": csrf, // send the same token we set in cookie
         },
-        credentials: "include",                 // ✅ include cookies
+        credentials: "include",
         body: JSON.stringify({ password: pwd.trim() }),
       });
 
       if (res.ok) {
         window.location.href = "/admin";
       } else {
-        // Try to surface server message if any
         let text = "Invalid password.";
         try {
           const j = await res.json();
@@ -72,7 +74,6 @@ export default function AdminLoginPage() {
         className="w-full max-w-sm rounded-lg border border-slate-800 bg-[rgba(10,15,28,0.8)] p-6"
       >
         <h1 className="mb-4 text-lg font-semibold">Admin Login</h1>
-
         <input
           type="password"
           className="field w-full"
@@ -81,9 +82,7 @@ export default function AdminLoginPage() {
           onChange={(e) => setPwd(e.target.value)}
           autoComplete="current-password"
         />
-
         {msg && <p className="mt-2 text-sm text-rose-400">{msg}</p>}
-
         <button type="submit" className="btn-primary mt-4 w-full" disabled={loading}>
           {loading ? "Signing in…" : "Login"}
         </button>
