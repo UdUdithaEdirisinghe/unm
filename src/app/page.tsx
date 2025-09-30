@@ -82,10 +82,23 @@ function pick(
   return n > 0 ? arr.slice(0, n) : arr;
 }
 
+/* --------- MINIMAL FIX: safe wrapper around getProducts --------- */
+async function safeList(): Promise<Product[]> {
+  try {
+    const rows = await getProducts();
+    return Array.isArray(rows) ? rows : [];
+  } catch (e: any) {
+    console.error("[HomePage] getProducts failed:", e?.message || e);
+    // Fail safe: return empty so the page still renders
+    return [];
+  }
+}
+
 /* ---------------- Page ---------------- */
 
 export default async function HomePage() {
-  const all = await getProducts();
+  // Use the safe wrapper instead of calling getProducts() directly
+  const all = await safeList();
 
   const featured = pick(
     all,
