@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { useCart } from "../../../components/cart/CartProvider";
 import ProductCard from "../../../components/ProductCard";
 import type { Product } from "../../../lib/products";
@@ -69,6 +69,19 @@ export default function ProductDetail({ product }: { product: Product }) {
     if (e.key === "ArrowLeft") prev();
     if (e.key === "ArrowRight") next();
   }
+
+  /* ---------- Show arrows only when user is reaching to them ---------- */
+  const [showArrows, setShowArrows] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const revealArrows = () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    setShowArrows(true);
+  };
+  const scheduleHideArrows = (delay = 1200) => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    hideTimer.current = setTimeout(() => setShowArrows(false), delay);
+  };
 
   /* ---------- Pricing / stock ---------- */
   const salePrice = product.salePrice ?? null;
@@ -143,20 +156,39 @@ export default function ProductDetail({ product }: { product: Product }) {
             )}
           </div>
 
-          {/* IMAGE TRACK + ARROW OVERLAY */}
-          <div className="relative">
+          {/* IMAGE TRACK + OVERLAY (arrows reveal on hover/focus/touch) */}
+          <div
+            className="relative"
+            onMouseEnter={revealArrows}
+            onMouseLeave={() => setShowArrows(false)}
+            onFocus={revealArrows}
+            onBlur={() => setShowArrows(false)}
+          >
             {/* track */}
             <div
-              onTouchStart={(e) => start(e.touches[0].clientX)}
+              onTouchStart={(e) => {
+                revealArrows();
+                start(e.touches[0].clientX);
+              }}
               onTouchMove={(e) => move(e.touches[0].clientX)}
-              onTouchEnd={end}
+              onTouchEnd={() => {
+                end();
+                scheduleHideArrows(1000);
+              }}
               onMouseDown={(e) => {
                 e.preventDefault();
+                revealArrows();
                 start(e.clientX);
               }}
               onMouseMove={(e) => drag.isDragging && move(e.clientX)}
-              onMouseUp={end}
-              onMouseLeave={end}
+              onMouseUp={() => {
+                end();
+                scheduleHideArrows(800);
+              }}
+              onMouseLeave={() => {
+                end();
+                setShowArrows(false);
+              }}
             >
               <div
                 className={`flex transition-transform duration-300 ease-out ${
@@ -184,12 +216,18 @@ export default function ProductDetail({ product }: { product: Product }) {
               </div>
             </div>
 
-            {/* centered arrows */}
+            {/* centered arrows (fade in on reach) */}
             {imgs.length > 1 && (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-2 sm:px-3">
+              <div
+                className={`pointer-events-none absolute inset-0 flex items-center justify-between px-2 sm:px-3 transition-opacity duration-200
+                ${showArrows ? "opacity-100" : "opacity-0"}`}
+              >
                 <button
                   aria-label="Previous image"
-                  onClick={prev}
+                  onClick={() => {
+                    revealArrows();
+                    prev();
+                  }}
                   className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/95 ring-1 ring-slate-300/80 shadow-md hover:bg-white active:scale-95 transition"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" className="text-slate-900">
@@ -198,7 +236,10 @@ export default function ProductDetail({ product }: { product: Product }) {
                 </button>
                 <button
                   aria-label="Next image"
-                  onClick={next}
+                  onClick={() => {
+                    revealArrows();
+                    next();
+                  }}
                   className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/95 ring-1 ring-slate-300/80 shadow-md hover:bg-white active:scale-95 transition"
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" className="text-slate-900">
