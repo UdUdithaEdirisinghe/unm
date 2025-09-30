@@ -6,6 +6,7 @@ import type { Product, Order, OrderStatus } from "../../lib/products";
 import type { Promo } from "../../lib/promos";
 import type { StoreCredit } from "../../lib/storeCredits";
 import { secureFetch } from "../../lib/secureFetch";
+
 /* ——— util ——— */
 function fmtLKR(n: number) {
   const safe = Number.isFinite(n) ? n : 0;
@@ -29,7 +30,10 @@ type Draft = {
   price: string;
   salePrice: string;
   specsRows: { key: string; value: string }[];
+  /** NEW: warranty text, e.g. “1 Year Warranty” or "" */
+  warranty: string;
 };
+
 const EMPTY: Draft = {
   name: "",
   slug: "",
@@ -41,6 +45,8 @@ const EMPTY: Draft = {
   price: "",
   salePrice: "",
   specsRows: [{ key: "", value: "" }],
+  /** NEW */
+  warranty: "",
 };
 
 /* ——— promo draft ——— */
@@ -187,6 +193,8 @@ export default function AdminPage() {
       price: String(p.price),
       salePrice: p.salePrice != null ? String(p.salePrice) : "",
       specsRows: rows,
+      /** NEW */
+      warranty: (p as any).warranty ?? "",
     });
     setMsg(null);
     setErr(null);
@@ -221,6 +229,8 @@ export default function AdminPage() {
       stock: Number(draft.stock) || 0,
       price,
       salePrice: sale,
+      /** NEW */
+      warranty: draft.warranty || null,
     };
   }
 
@@ -565,6 +575,21 @@ export default function AdminPage() {
         <input className="field" placeholder="Stock" inputMode="numeric" value={draft.stock} onChange={(e) => setDraft({ ...draft, stock: e.target.value })} />
         <input className="field" placeholder="Price (LKR)" inputMode="numeric" value={draft.price} onChange={(e) => setDraft({ ...draft, price: e.target.value })} />
         <input className="field" placeholder="Sale price (optional)" inputMode="numeric" value={draft.salePrice} onChange={(e) => setDraft({ ...draft, salePrice: e.target.value })} />
+
+        {/* NEW: Warranty select */}
+        <select
+          className="field md:col-span-2"
+          value={draft.warranty}
+          onChange={(e) => setDraft({ ...draft, warranty: e.target.value })}
+          title="Warranty"
+        >
+          <option value="">Warranty (optional)</option>
+          <option>1 Week Checking Warranty</option>
+          <option>1 Month Warranty</option>
+          <option>6 Months Warranty</option>
+          <option>1 Year Warranty</option>
+          <option>2 Years Warranty</option>
+        </select>
 
         <div className="md:col-span-2 mt-2 flex items-center justify-end gap-2">
           {draft.id && (

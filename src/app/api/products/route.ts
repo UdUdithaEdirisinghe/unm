@@ -1,14 +1,23 @@
 import { NextResponse } from "next/server";
-import { getProducts, createProduct, type Product } from "../../../lib/products";
+import { getProducts, getProductsByCategory, createProduct, type Product } from "../../../lib/products";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const j = (data: any, status = 200) => NextResponse.json(data, { status });
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
-    const products = await getProducts();
+    const url = new URL(req.url);
+    const category = url.searchParams.get("category") || undefined;
+    const excludeId = url.searchParams.get("exclude") || undefined;
+    const limitStr = url.searchParams.get("limit");
+    const limit = limitStr ? Number(limitStr) : undefined;
+
+    const products = category
+      ? await getProductsByCategory(category, excludeId, limit)
+      : await getProducts();
+
     return j(products);
   } catch (e: any) {
     return j({ error: e?.message || "Failed to load products." }, 500);
@@ -23,7 +32,6 @@ export async function POST(req: Request) {
     const slug = (body.slug ?? "").toString().trim();
     const price = Number(body.price);
     const stock = Number(body.stock ?? 0);
-
     const images = Array.isArray(body.images) ? body.images : (body.image ? [body.image] : []);
 
     if (!name || !slug || !Number.isFinite(price) || images.length === 0) {
@@ -42,6 +50,8 @@ export async function POST(req: Request) {
       category: body.category ?? null,
       specs: (body.specs as Record<string, string> | null) ?? null,
       stock: Number.isFinite(stock) ? stock : 0,
+      // NEW
+      warranty: body.warranty ?? null,
     });
 
     return j(created, 201);

@@ -1,3 +1,4 @@
+// lib/products.ts
 import sql, { toJson } from "./db";
 
 export type Product = {
@@ -14,6 +15,8 @@ export type Product = {
   specs?: Record<string, string> | null;
   stock: number;
   createdAt?: string;
+  /** NEW */
+  warranty?: string | null;
 };
 
 export type CartItem = {
@@ -83,33 +86,53 @@ function rowToProduct(r: any): Product {
     images: imgs.length ? imgs : (primary ? [primary] : []),
     price: Number(r.price),
     salePrice: r.sale_price === null ? null : Number(r.sale_price),
-    shortDesc: r.short_desc ?? null,         // <-- maps to overview
+    shortDesc: r.short_desc ?? null,
     brand: r.brand ?? null,
     category: r.category ?? null,
     specs: r.specs || null,
     stock: Number(r.stock ?? 0),
     createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+    /** NEW */
+    warranty: r.warranty ?? null,
   };
 }
 
+/* ----------------------------- READ ----------------------------- */
+
+// Original: list all (kept for backward compatibility)
 export async function getProducts(): Promise<Product[]> {
   const rows = await sql`
-    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at
+    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
     FROM products
     ORDER BY created_at DESC
   `;
   return rows.map(rowToProduct);
 }
 
+// New: filtered list for related section (safe dynamic pieces with template sql)
+export async function getProductsByCategory(category: string, excludeId?: string, limit?: number) {
+  const rows = await sql`
+    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
+    FROM products
+    WHERE category = ${category}
+    ${excludeId ? sql`AND id <> ${excludeId}` : sql``}
+    ORDER BY created_at DESC
+    ${limit && Number(limit) > 0 ? sql`LIMIT ${Number(limit)}` : sql``}
+  `;
+  return rows.map(rowToProduct);
+}
+
 export async function getProductBySlug(slug: string): Promise<Product | null> {
   const rows = await sql`
-    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at
+    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
     FROM products
     WHERE slug = ${slug}
     LIMIT 1
   `;
   return rows[0] ? rowToProduct(rows[0]) : null;
 }
+
+/* ---------------------------- CREATE ---------------------------- */
 
 export async function createProduct(p: Omit<Product, "id" | "createdAt" | "image">) {
   const id = `p_${Date.now()}`;
@@ -118,7 +141,7 @@ export async function createProduct(p: Omit<Product, "id" | "createdAt" | "image
 
   const rows = await sql`
     INSERT INTO products
-      (id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock)
+      (id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, warranty)
     VALUES
       (
         ${id},
@@ -132,16 +155,19 @@ export async function createProduct(p: Omit<Product, "id" | "createdAt" | "image
         ${p.brand ?? null},
         ${p.category ?? null},
         ${p.specs ? sql`${toJson(p.specs)}::jsonb` : null},
-        ${p.stock ?? 0}
+        ${p.stock ?? 0},
+        ${p.warranty ?? null}
       )
-    RETURNING id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at
+    RETURNING id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
   `;
   return rowToProduct(rows[0]);
 }
 
+/* ---------------------------- UPDATE ---------------------------- */
+
 export async function updateProduct(id: string, patch: Partial<Product>) {
   const current = await sql`
-    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock
+    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, warranty
     FROM products WHERE id = ${id} LIMIT 1
   `;
   if (!current[0]) return null;
@@ -162,6 +188,7 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
     specs: patch.specs === undefined ? prev.specs : patch.specs,
     stock: patch.stock === undefined ? prev.stock : Number(patch.stock),
     price: patch.price === undefined ? prev.price : Number(patch.price),
+    warranty: patch.warranty === undefined ? prev.warranty : (patch.warranty ?? null),
   };
 
   const rows = await sql`
@@ -176,12 +203,15 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
       brand = ${next.brand ?? null},
       category = ${next.category ?? null},
       specs = ${next.specs ? sql`${toJson(next.specs)}::jsonb` : null},
-      stock = ${next.stock}
+      stock = ${next.stock},
+      warranty = ${next.warranty ?? null}
     WHERE id = ${id}
-    RETURNING id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at
+    RETURNING id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
   `;
   return rows[0] ? rowToProduct(rows[0]) : null;
 }
+
+/* ---------------------------- DELETE ---------------------------- */
 
 export async function deleteProduct(id: string) {
   await sql`DELETE FROM products WHERE id = ${id}`;

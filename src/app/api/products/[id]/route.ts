@@ -27,6 +27,11 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       patch.images = [String(patch.images)];
     }
 
+    // Normalize warranty (string or null)
+    if (patch.warranty !== undefined && patch.warranty !== null) {
+      patch.warranty = String(patch.warranty);
+    }
+
     const updated = await updateProduct(params.id, patch);
     if (!updated) return j({ error: "Not found" }, 404);
     return j(updated);
