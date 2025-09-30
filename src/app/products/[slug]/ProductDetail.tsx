@@ -4,12 +4,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState, useEffect } from "react";
 import { useCart } from "../../../components/cart/CartProvider";
+import ProductCard from "../../../components/ProductCard";
 import type { Product } from "../../../lib/products";
 import { formatCurrency } from "../../../lib/format";
 import { toast } from "react-hot-toast";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import ProductCard from "../../../components/ProductCard";
 
 export default function ProductDetail({ product }: { product: Product }) {
   const { add } = useCart();
@@ -65,7 +65,7 @@ export default function ProductDetail({ product }: { product: Product }) {
       return { startX: 0, deltaX: 0, isDragging: false };
     });
   }
-  function onKey(e: React.KeyboardEvent) {
+  function onKey(e: any) {
     if (e.key === "ArrowLeft") prev();
     if (e.key === "ArrowRight") next();
   }
@@ -119,23 +119,18 @@ export default function ProductDetail({ product }: { product: Product }) {
     return null;
   };
 
-  const warranty = (product as any).warranty as string | null | undefined;
-
-  // per-slide percent (of the track)
-  const per = 100 / Math.max(imgs.length, 1);
-
   return (
     <>
       {/* ===== Top: gallery + info ===== */}
       <div className="grid gap-8 lg:grid-cols-2 items-start">
         {/* ===== Gallery / Carousel ===== */}
         <aside
-          className="relative overflow-hidden rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.4)] lg:sticky lg:top-24 lg:self-start select-none"
+          className="relative overflow-hidden rounded-lg border border-slate-800/60 bg-[rgba(10,15,28,0.35)] lg:sticky lg:top-24 lg:self-start select-none"
           tabIndex={0}
           onKeyDown={onKey}
         >
           {/* badges */}
-          <div className="absolute top-3 left-3 z-20 flex flex-col gap-2">
+          <div className="absolute top-3 left-3 z-30 flex flex-col gap-2">
             {outOfStock && (
               <span className="rounded-md bg-rose-600 px-2 py-1 text-xs font-semibold text-white shadow">
                 Out of stock
@@ -148,77 +143,73 @@ export default function ProductDetail({ product }: { product: Product }) {
             )}
           </div>
 
-          {/* track */}
-          <div
-            onTouchStart={(e) => start(e.touches[0].clientX)}
-            onTouchMove={(e) => move(e.touches[0].clientX)}
-            onTouchEnd={end}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              start(e.clientX);
-            }}
-            onMouseMove={(e) => drag.isDragging && move(e.clientX)}
-            onMouseUp={end}
-            onMouseLeave={end}
-          >
+          {/* IMAGE TRACK + ARROW OVERLAY */}
+          <div className="relative">
+            {/* track */}
             <div
-              className={`flex transition-transform duration-300 ease-out ${
-                drag.isDragging ? "!duration-0" : ""
-              }`}
-              style={{
-                // Track spans all slides; translate by one slide each time
-                width: `${imgs.length * 100}%`,
-                transform: `translateX(calc(-${index * per}% + ${drag.isDragging ? drag.deltaX : 0}px))`,
+              onTouchStart={(e) => start(e.touches[0].clientX)}
+              onTouchMove={(e) => move(e.touches[0].clientX)}
+              onTouchEnd={end}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                start(e.clientX);
               }}
+              onMouseMove={(e) => drag.isDragging && move(e.clientX)}
+              onMouseUp={end}
+              onMouseLeave={end}
             >
-              {imgs.map((src, i) => (
-                <div
-                  key={i}
-                  // Each slide is per% of the track (=> exactly viewport width)
-                  style={{ width: `${per}%` }}
-                  className="shrink-0"
-                >
-                  {/* fixed responsive height */}
-                  <div className="relative w-full bg-white h-[300px] sm:h-[360px] md:h-[420px] lg:h-[480px] 2xl:h-[540px]">
-                    <Image
-                      src={src}
-                      alt={`${product.name} ${i + 1}`}
-                      fill
-                      sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 800px"
-                      className="object-contain object-center"
-                      priority={i === 0}
-                    />
+              <div
+                className={`flex transition-transform duration-300 ease-out ${
+                  drag.isDragging ? "!duration-0" : ""
+                }`}
+                style={{
+                  transform: `translateX(calc(-${index * 100}% + ${drag.isDragging ? drag.deltaX : 0}px))`,
+                }}
+              >
+                {imgs.map((src, i) => (
+                  <div key={i} style={{ flex: "0 0 100%" }} className="shrink-0">
+                    {/* responsive frame; image fills + crops */}
+                    <div className="relative w-full h-[360px] sm:h-[420px] md:h-[520px] lg:h-[560px] 2xl:h-[620px] bg-slate-900">
+                      <Image
+                        src={src}
+                        alt={`${product.name} ${i + 1}`}
+                        fill
+                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 800px"
+                        className="object-cover object-center"
+                        priority={i === 0}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
-            {/* arrows */}
+            {/* centered arrows */}
             {imgs.length > 1 && (
-              <>
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-between px-2 sm:px-3">
                 <button
                   aria-label="Previous image"
                   onClick={prev}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/40 hover:bg-black/60 p-2 text-white"
+                  className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/95 ring-1 ring-slate-300/80 shadow-md hover:bg-white active:scale-95 transition"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24">
+                  <svg width="20" height="20" viewBox="0 0 24 24" className="text-slate-900">
                     <path fill="currentColor" d="M15.41 7.41L14 6l-6 6l6 6l1.41-1.41L10.83 12z" />
                   </svg>
                 </button>
                 <button
                   aria-label="Next image"
                   onClick={next}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 z-20 rounded-full bg-black/40 hover:bg-black/60 p-2 text-white"
+                  className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/95 ring-1 ring-slate-300/80 shadow-md hover:bg-white active:scale-95 transition"
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24">
+                  <svg width="20" height="20" viewBox="0 0 24 24" className="text-slate-900">
                     <path fill="currentColor" d="m10 6l-1.41 1.41L13.17 12l-4.58 4.59L10 18l6-6z" />
                   </svg>
                 </button>
-              </>
+              </div>
             )}
           </div>
 
-          {/* dots */}
+          {/* DOTS */}
           {imgs.length > 1 && (
             <div className="flex items-center justify-center gap-2 py-3">
               {imgs.map((_, i) => (
@@ -227,27 +218,27 @@ export default function ProductDetail({ product }: { product: Product }) {
                   aria-label={`Go to image ${i + 1}`}
                   onClick={() => go(i)}
                   className={`h-2.5 w-2.5 rounded-full transition ${
-                    i === index ? "bg-slate-300" : "bg-slate-600/60 hover:bg-slate-500"
+                    i === index ? "bg-slate-200" : "bg-slate-600/60 hover:bg-slate-500"
                   }`}
                 />
               ))}
             </div>
           )}
 
-          {/* thumbs */}
+          {/* THUMBS */}
           {imgs.length > 1 && (
-            <div className="flex gap-3 p-3 overflow-x-auto border-t border-slate-800/60 bg-[rgba(10,15,28,0.45)]">
+            <div className="flex gap-3 p-3 overflow-x-auto border-t border-slate-800/60 bg-[rgba(10,15,28,0.4)]">
               {imgs.map((src, i) => (
                 <button
                   key={i}
                   onClick={() => go(i)}
                   className={`shrink-0 rounded-xl border transition ${
                     i === index ? "border-indigo-500 shadow" : "border-slate-700 hover:border-slate-500"
-                  } bg-white`}
+                  } bg-slate-900/40`}
                   aria-label={`Thumbnail ${i + 1}`}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={src} alt={`thumb-${i}`} className="h-20 w-24 object-contain rounded-xl" />
+                  <img src={src} alt={`thumb-${i}`} className="h-20 w-24 object-cover rounded-xl" />
                 </button>
               ))}
             </div>
@@ -281,7 +272,7 @@ export default function ProductDetail({ product }: { product: Product }) {
 
           {/* badges */}
           <div className="mb-4 flex flex-wrap items-center gap-2">
-            {warranty && (
+            {(product as any).warranty && (
               <span className="inline-flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800/70 px-2 py-1 text-xs text-slate-200">
                 <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
                   <path
@@ -289,7 +280,7 @@ export default function ProductDetail({ product }: { product: Product }) {
                     d="M12 2l7 4v6c0 5-3.8 9.7-7 10c-3.2-.3-7-5-7-10V6l7-4zm0 4.2L7 7.7v4.7c0 3.7 2.5 7.5 5 8c2.5-.5 5-4.3 5-8V7.7l-5-1.5zm-1 9.3l-3-3l1.4-1.4l1.6 1.6l3.6-3.6L16 9.7L11 15.5z"
                   />
                 </svg>
-                {warranty}
+                {(product as any).warranty}
               </span>
             )}
             <span className="inline-flex items-center gap-2 rounded-md border border-slate-700 bg-slate-800/70 px-2 py-1 text-xs text-slate-200">
