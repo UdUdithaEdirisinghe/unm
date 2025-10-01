@@ -1,6 +1,6 @@
 // src/lib/mail.ts
 import nodemailer, { SendMailOptions } from "nodemailer";
-import { createInvoicePdf } from "./invoice";
+import { createInvoicePdf } from "./invoice"; // your invoice.ts handles { variant, warrantyLines }
 
 const {
   SMTP_HOST,
@@ -20,7 +20,7 @@ type Line = { name: string; quantity: number; price: number; slug?: string };
 
 export type OrderEmail = {
   id: string;
-  createdAt: string;
+  createdAt: string; // ISO string
   customer: {
     firstName: string;
     lastName: string;
@@ -56,6 +56,7 @@ const money = (v: number) =>
     maximumFractionDigits: 0,
   }).format(v);
 
+// Always render in Sri Lanka local time
 const LK_TZ = "Asia/Colombo";
 function fmtDate(d: string) {
   return new Intl.DateTimeFormat("en-LK", {
@@ -74,7 +75,13 @@ function escapeHtml(s: string) {
     .replace(/'/g, "&#039;");
 }
 
-/* ----------------- Items Table ----------------- */
+/**
+ * MOBILE-SAFE ITEM RENDERER
+ * - 1 <tr> per item, 1 <td colspan="4"> keeps header layout unchanged
+ * - Line 1: product name (wraps)
+ * - Line 2: Qty • Price • Total (inline)
+ * Prevents numeric column overlap in Gmail iOS/Android and Outlook.
+ */
 const itemsTable = (items: Line[]) =>
   items
     .map(
@@ -94,7 +101,8 @@ const itemsTable = (items: Line[]) =>
     )
     .join("");
 
-/* ----------------- Customer Email ----------------- */
+/* ----------------- customer email (orders) ----------------- */
+
 function renderCustomerEmail(o: OrderEmail) {
   const brand = SITE_NAME || "Manny.lk";
   const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
@@ -117,7 +125,7 @@ function renderCustomerEmail(o: OrderEmail) {
 
   const notesBlock = o.customer.notes
     ? `
-<div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+<div style="padding:16px;border:1px solid ${"#e5e7eb"};border-radius:8px;background:#fff;margin-bottom:16px">
   <div style="font-weight:600;margin-bottom:6px">Order notes</div>
   <div style="color:#334155;white-space:pre-wrap;line-height:1.6">
     ${escapeHtml(o.customer.notes)}
@@ -202,7 +210,8 @@ function renderCustomerEmail(o: OrderEmail) {
 </div>`;
 }
 
-/* ----------------- Admin Email ----------------- */
+/* ----------------- admin email (orders) ----------------- */
+
 function renderAdminEmail(o: OrderEmail) {
   const shippingLine = o.customer.shipToDifferent
     ? `<div><b>Ship to:</b> ${[
@@ -247,8 +256,10 @@ function renderAdminEmail(o: OrderEmail) {
 </div>`;
 }
 
-/* ----------------- Transport ----------------- */
+/* ----------------- transport (verify + fallback) ----------------- */
+
 let cached: nodemailer.Transporter | null = null;
+
 async function makeTransport(host: string, port: number, secure: boolean) {
   const t = nodemailer.createTransport({
     host,
@@ -259,28 +270,57 @@ async function makeTransport(host: string, port: number, secure: boolean) {
     requireTLS: !secure,
     logger: true,
     debug: true,
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 20000,
+    connectionTimeout: 15_000,
+    greetingTimeout: 15_000,
+    socketTimeout: 20_000,
     tls: secure ? undefined : { rejectUnauthorized: true },
   } as any);
+  // verify may throw (network / auth). Let caller handle errors.
   await t.verify();
   return t;
 }
+
 async function getTransporter(): Promise<nodemailer.Transporter> {
   if (cached) return cached;
   const host = SMTP_HOST || "smtp.zoho.com";
   const wantPort = Number(SMTP_PORT || 587);
   const wantSecure = wantPort === 465;
-  cached = await makeTransport(host, wantPort, wantSecure);
-  return cached;
-}
-async function reallySend(opts: SendMailOptions) {
-  const t = await getTransporter();
-  return await t.sendMail(opts);
+
+  try {
+    console.log(`[mail] trying SMTP ${host}:${wantPort} secure=${wantSecure}`);
+    cached = await makeTransport(host, wantPort, wantSecure);
+    console.log("[mail] SMTP verify OK on desired port");
+    return cached;
+  } catch (e1: any) {
+    console.error("[mail] primary SMTP failed:", e1?.message || e1);
+    const altPort = wantPort === 465 ? 587 : 465;
+    const altSecure = altPort === 465;
+    try {
+      console.log(`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`);
+      cached = await makeTransport(host, altPort, altSecure);
+      console.log("[mail] SMTP verify OK on fallback port");
+      return cached;
+    } catch (e2: any) {
+      console.error("[mail] fallback SMTP also failed:", e2?.message || e2);
+      throw e2;
+    }
+  }
 }
 
-/* ----------------- sendOrderEmails ----------------- */
+async function reallySend(opts: SendMailOptions) {
+  const t = await getTransporter();
+  const info = await t.sendMail(opts);
+  console.log("[mail] sent:", {
+    messageId: info.messageId,
+    response: info.response,
+    to: opts.to,
+    subject: opts.subject,
+  });
+  return info;
+}
+
+/* ----------------- public API (orders) ----------------- */
+
 export async function sendOrderEmails(order: OrderEmail) {
   const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
   const fromHeader =
@@ -288,18 +328,35 @@ export async function sendOrderEmails(order: OrderEmail) {
       ? MAIL_FROM
       : fallbackFrom;
 
-  // 1) Customer email (customer variant PDF)
+  // Choose warranty text (static here; replace with per-product aggregation if you later store it in order items)
+  const warrantyLines: string[] = [
+    "Standard warranty period: 12 months from date of purchase.",
+    "Covers manufacturing defects only.",
+    "Physical/accidental damage, liquid damage, misuse, or unauthorized repairs are not covered.",
+    "Please retain this invoice for warranty claims."
+  ];
+
+  // 1) Customer email — attach CUSTOMER variant PDF (no signature, with system note)
   try {
     const brand = SITE_NAME || "Manny.lk";
     let pdfCustomer: Buffer | null = null;
     try {
-      pdfCustomer = await createInvoicePdf(order, brand, { variant: "customer" });
-    } catch {
+      pdfCustomer = await createInvoicePdf(order, brand, { variant: "customer", warrantyLines });
+    } catch (e) {
+      console.error("[mail] customer PDF generation failed:", (e as any)?.message || e);
       pdfCustomer = null;
     }
+
     const custAttachments = pdfCustomer
-      ? [{ filename: `invoice-${order.id}.pdf`, content: pdfCustomer, contentType: "application/pdf" }]
+      ? [
+          {
+            filename: `invoice-${order.id}.pdf`,
+            content: pdfCustomer,
+            contentType: "application/pdf",
+          },
+        ]
       : [];
+
     await reallySend({
       from: fromHeader,
       to: order.customer.email,
@@ -311,18 +368,28 @@ export async function sendOrderEmails(order: OrderEmail) {
     console.error("[mail] customer email failed:", err?.message || err);
   }
 
-  // 2) Admin email (admin variant PDF)
+  // 2) Admin email — attach ADMIN variant PDF (signature/seal)
   try {
     const brand = SITE_NAME || "Manny.lk";
+
     let pdfBuffer: Buffer | null = null;
     try {
-      pdfBuffer = await createInvoicePdf(order, brand, { variant: "admin" });
-    } catch {
+      pdfBuffer = await createInvoicePdf(order, brand, { variant: "admin", warrantyLines });
+    } catch (pdfErr: any) {
+      console.error("[mail] admin PDF generation failed:", pdfErr?.message || pdfErr);
       pdfBuffer = null;
     }
+
     const attachments = pdfBuffer
-      ? [{ filename: `invoice-${order.id}.pdf`, content: pdfBuffer, contentType: "application/pdf" }]
+      ? [
+          {
+            filename: `invoice-${order.id}.pdf`,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ]
       : [];
+
     await reallySend({
       from: fromHeader,
       to: MAIL_TO_ORDERS || SMTP_USER,
@@ -335,8 +402,16 @@ export async function sendOrderEmails(order: OrderEmail) {
   }
 }
 
-/* ----------------- Contact Email ----------------- */
-type ContactPayload = { name: string; email: string; phone?: string; subject?: string; message: string };
+/* ----------------- contact email (admin notify) ----------------- */
+
+type ContactPayload = {
+  name: string;
+  email: string;
+  phone?: string;
+  subject?: string;
+  message: string;
+};
+
 export async function sendContactEmail(payload: ContactPayload) {
   const to = MAIL_TO_CONTACT || "info@manny.lk";
   const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
@@ -346,52 +421,165 @@ export async function sendContactEmail(payload: ContactPayload) {
       : fallbackFrom;
 
   const brand = SITE_NAME || "Manny.lk";
+  const primary = "#111827";
+  const subText = "#4b5563";
+  const border = "#e5e7eb";
+  const bg = "#ffffff";
+
   const safe = (s: string | undefined) =>
-    (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    (s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
 
   const html = `
-<div style="padding:24px;font-family:Inter,system-ui,sans-serif">
-  <h2>New website inquiry</h2>
-  <p>From: ${safe(payload.name)} &lt;${safe(payload.email)}&gt;</p>
-  ${payload.phone ? `<p>Phone: ${safe(payload.phone)}</p>` : ""}
-  ${payload.subject ? `<p>Subject: ${safe(payload.subject)}</p>` : ""}
-  <pre>${safe(payload.message)}</pre>
+<div style="margin:0;padding:24px;background:${bg};color:${primary};font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
+  <div style="max-width:640px;margin:0 auto;">
+    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:16px;">
+      <h2 style="margin:0 0 6px;font-size:20px;color:${primary};">New website inquiry</h2>
+      <div style="margin:0;color:${subText};">${brand}</div>
+    </div>
+
+    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
+      <div style="font-weight:600;margin-bottom:6px;color:${primary};">From</div>
+      <div style="color:${subText};">${safe(payload.name) || "-"}</div>
+      <div style="margin-top:2px;">
+        <a href="mailto:${safe(payload.email)}" style="text-decoration:none;color:#2563eb;">${safe(
+          payload.email
+        ) || "-"}</a>
+      </div>
+      <div style="margin-top:8px;">
+        <a href="mailto:${safe(payload.email)}?subject=Re:%20${encodeURIComponent(
+          payload.subject || "Your message to " + brand
+        )}"
+           style="display:inline-block;padding:8px 10px;border:1px solid ${border};border-radius:8px;text-decoration:none;color:#2563eb;">
+          Reply to customer
+        </a>
+      </div>
+    </div>
+
+    ${
+      payload.subject
+        ? `
+    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
+      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Subject</div>
+      <div style="color:${subText};">${safe(payload.subject)}</div>
+    </div>`
+        : ""
+    }
+
+    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};">
+      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Message</div>
+      <div style="white-space:pre-wrap;color:${primary};">${safe(payload.message)}</div>
+    </div>
+
+    <div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">©️ ${new Date().getFullYear()} ${brand}. All rights reserved.</div>
+  </div>
 </div>`;
 
-  await reallySend({
-    from: fromHeader,
-    to,
-    replyTo: payload.email,
-    subject: `[Contact] ${payload.subject || "Message"} — ${payload.name || "Customer"}`,
-    html,
-  });
+  try {
+    const t = await getTransporter();
+    await t.sendMail({
+      from: fromHeader,
+      to,
+      replyTo: payload.email,
+      subject: `[Contact] ${payload.subject || "Message"} — ${payload.name || "Customer"}`,
+      html,
+    });
+    console.log("[contact] sent to", to);
+  } catch (err: any) {
+    console.error("[contact] send failed:", err?.message || err);
+    throw err;
+  }
 }
 
-/* ----------------- Contact Reply ----------------- */
-type ContactReplyPayload = { customer: ContactPayload; replyMessage: string };
+/* ---------- Customer reply email (team → customer) ---------- */
+
+type ContactReplyPayload = {
+  customer: ContactPayload; // includes name, email, subject?, message (original)
+  replyMessage: string; // what your team wrote
+};
+
 function renderContactReplyEmail(p: ContactReplyPayload) {
   const brand = SITE_NAME || "Manny.lk";
+  const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
+  const wa = (NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
+  const waHref = wa ? `https://wa.me/${wa}` : null;
+
+  const primary = "#111827";
+  const subText = "#4b5563";
+  const border = "#e5e7eb";
+  const bg = "#ffffff";
+
   const safe = (s: string | undefined) =>
-    (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+    (s ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+
   return `
-<div style="padding:24px;font-family:Inter,system-ui,sans-serif">
-  <h2>Here’s your response from ${brand}</h2>
-  <div><b>Our reply:</b><br/>${safe(p.replyMessage)}</div>
-  <hr/>
-  <div><b>Your original message:</b><br/>${safe(p.customer.message)}</div>
+<div style="margin:0;padding:24px;background:${bg};color:${primary};font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
+  <div style="max-width:640px;margin:0 auto;">
+
+    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:16px;">
+      <h2 style="margin:0 0 6px;font-size:20px;color:${primary};">Here’s your response from ${brand}</h2>
+    </div>
+
+    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
+      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Our reply</div>
+      <div style="white-space:pre-wrap;color:${primary};">${safe(p.replyMessage)}</div>
+    </div>
+
+    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
+      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Your original message</div>
+      ${
+        p.customer.subject
+          ? `<div style="color:${subText};margin-bottom:6px;"><b>Subject:</b> ${safe(p.customer.subject)}</div>`
+          : ""
+      }
+      <div style="white-space:pre-wrap;color:${subText};">${safe(p.customer.message)}</div>
+    </div>
+
+    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:#f8fafc;">
+      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Need more help?</div>
+      <div style="color:${subText};">
+        Just reply to this email and it will reach us directly.${
+          waHref ? ` Or message us on <a href="${waHref}" style="text-decoration:none;color:#2563eb;">WhatsApp</a>.` : ""
+        }
+      </div>
+    </div>
+
+    <div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">
+      ©️ ${new Date().getFullYear()} ${brand}. All rights reserved · <a href="mailto:${contactEmail}" style="text-decoration:none;color:#2563eb;">${contactEmail}</a>
+    </div>
+
+  </div>
 </div>`;
 }
+
 export async function sendContactReplyEmail(p: ContactReplyPayload) {
   const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
   const fromHeader =
     MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(String(SMTP_USER).toLowerCase())
       ? MAIL_FROM
       : fallbackFrom;
-  await reallySend({
-    from: fromHeader,
-    to: p.customer.email,
-    replyTo: MAIL_TO_CONTACT || "info@manny.lk",
-    subject: `Thank you for your message — ${SITE_NAME || "Manny.lk"} Support`,
-    html: renderContactReplyEmail(p),
-  });
+
+  try {
+    const t = await getTransporter();
+    await t.sendMail({
+      from: fromHeader,
+      to: p.customer.email,
+      replyTo: MAIL_TO_CONTACT || "info@manny.lk",
+      subject: `Thank you for your message — ${SITE_NAME || "Manny.lk"} Support`,
+      html: renderContactReplyEmail(p),
+    });
+    console.log("[contact reply] sent to", p.customer.email);
+  } catch (err: any) {
+    console.error("[contact reply] send failed:", err?.message || err);
+    throw err;
+  }
 }
