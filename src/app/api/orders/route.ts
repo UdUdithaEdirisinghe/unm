@@ -50,7 +50,7 @@ function rowToOrder(r: any): Order {
     paymentMethod: (r.payment_method as Order["paymentMethod"]) ?? "COD",
     bankSlipName: r.bank_slip_name ?? null,
     bankSlipUrl: r.bank_slip_url ?? null,
-    promoKind: (r.promo_kind as Order["promoKind"]) ?? null, // optional column if you added it
+    promoKind: (r.promo_kind as Order["promoKind"]) ?? null,
   };
 }
 
@@ -90,17 +90,20 @@ export async function POST(req: Request) {
       paymentMethod: body.paymentMethod,
     });
 
-    /* 1) STOCK check */
+    /* 1) STOCK check + fetch warranty for email enrichment */
     const ids = items.map((it) => it.id);
     const productRows: any[] = ids.length
-      ? await sql`SELECT id, stock, name FROM products WHERE id = ANY(${ids})`
+      ? await sql`SELECT id, stock, name, warranty FROM products WHERE id = ANY(${ids})`
       : [];
 
     const stock = new Map<string, number>();
     const names = new Map<string, string>();
+    const warranties = new Map<string, string | null>();
     for (const r of productRows) {
-      stock.set(String(r.id), num(r.stock));
-      names.set(String(r.id), String(r.name));
+      const pid = String(r.id);
+      stock.set(pid, num(r.stock));
+      names.set(pid, String(r.name));
+      warranties.set(pid, r.warranty == null ? null : String(r.warranty));
     }
 
     console.log("[orders] loaded product stocks:", productRows.length);
@@ -180,6 +183,7 @@ export async function POST(req: Request) {
     const total = Math.max(0, subtotal - promo_discount) + shipping;
 
     /* 3) build customer JSON */
+    const wantsPrintedInvoice = !!body.wantsPrintedInvoice;
     const customer = {
       firstName: String(body.customer?.firstName || ""),
       lastName: String(body.customer?.lastName || ""),
@@ -189,6 +193,8 @@ export async function POST(req: Request) {
       city: String(body.customer?.city || ""),
       postal: body.customer?.postal ? String(body.customer.postal) : undefined,
       notes: body.customer?.notes ? String(body.customer.notes) : undefined,
+      // Store the flag inside customer JSON (no schema change)
+      wantsPrintedInvoice,
       shipToDifferent: body.shipDifferent
         ? {
             name:
@@ -221,6 +227,7 @@ export async function POST(req: Request) {
       free_shipping,
       promoKind,
       payment_method,
+      wantsPrintedInvoice,
     });
 
     /* 4) write order, decrement stock */
@@ -271,13 +278,19 @@ export async function POST(req: Request) {
     // 6) Send emails (customer + admin-with-PDF)
     console.log("[orders] dispatching emails for", order_id);
     try {
+      // Enrich items for EMAIL ONLY (do not change DB schema)
+      const emailItems = items.map((it) => ({
+        ...it,
+        warranty: warranties.get(it.id) ?? null,
+      }));
+
       await sendOrderEmails({
         id: row.id,
         createdAt: (row.created_at
           ? new Date(row.created_at).toISOString()
           : new Date().toISOString()),
         customer,
-        items,
+        items: emailItems,
         subtotal,
         shipping,
         total,

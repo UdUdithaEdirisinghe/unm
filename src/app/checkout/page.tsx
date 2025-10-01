@@ -1,3 +1,4 @@
+// Checkout page (your file, with minimal changes highlighted in comments)
 "use client";
 
 import Link from "next/link";
@@ -46,6 +47,9 @@ export default function CheckoutPage() {
 
   // Terms
   const [agree, setAgree] = useState(false);
+
+  // NEW: Printed invoice request
+  const [wantsPrintedInvoice, setWantsPrintedInvoice] = useState(false);
 
   // Promo / Store credit (unified)
   const [codeInput, setCodeInput] = useState("");
@@ -117,7 +121,7 @@ export default function CheckoutPage() {
     if (!slipFile) return undefined;
     const fd = new FormData();
     fd.append("file", slipFile);
-    const r = await fetch("/api/upload", { method: "POST", body: fd });
+    const r = await fetch("/api/upload?kind=bank-slip", { method: "POST", body: fd });
     const data = await r.json().catch(() => ({}));
     if (!r.ok || !data?.path) throw new Error(data?.error || "Slip upload failed");
     return data.path as string;
@@ -178,6 +182,8 @@ export default function CheckoutPage() {
           customer: bill,
           shipDifferent,
           shippingAddress,
+          // NEW: forward the printed-invoice intent
+          wantsPrintedInvoice,
         }),
       });
 
@@ -379,11 +385,21 @@ export default function CheckoutPage() {
               )}
             </div>
 
+            {/* Agree + Printed invoice (new checkbox placed right below, as requested) */}
             <label className="mt-2 flex items-center gap-2">
               <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
               <span className="text-slate-200">
                 I agree to the <Link href="/policies" className="underline">Terms & Conditions</Link>.
               </span>
+            </label>
+
+            <label className="mt-1 flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={wantsPrintedInvoice}
+                onChange={(e) => setWantsPrintedInvoice(e.target.checked)}
+              />
+              <span className="text-slate-200">Would you like us to include a printed invoice with your order?</span>
             </label>
 
             <button className="btn-primary w-full mt-2" disabled={busy}>
