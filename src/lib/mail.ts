@@ -2,7 +2,7 @@
 import "server-only";
 import nodemailer, { SendMailOptions } from "nodemailer";
 import { createInvoicePdf } from "./invoice"; // your invoice.ts handles { variant, warrantyLines }
-import sql from "./db"; // <-- added to read per-product warranty from DB
+import sql from "./db"; // read per-product warranty from DB
 
 const {
 SMTP_HOST,
@@ -18,7 +18,7 @@ NEXT_PUBLIC_WHATSAPP_PHONE,
 
 /* ----------------- types & helpers ----------------- */
 
-type Line = { name: string; quantity: number; price: number; slug?: string }; // keep as-is (items still carry id at runtime)
+type Line = { name: string; quantity: number; price: number; slug?: string };
 
 export type OrderEmail = {
 id: string;
@@ -82,7 +82,6 @@ return (s || "")
 * - 1 <tr> per item, 1 <td colspan="4"> keeps header layout unchanged
 * - Line 1: product name (wraps)
 * - Line 2: Qty • Price • Total (inline)
-* Prevents numeric column overlap in Gmail iOS/Android and Outlook.
 */
 const itemsTable = (items: Line[]) =>
 items
@@ -151,10 +150,7 @@ Your order <b>${escapeHtml(o.id)}</b> was received on ${fmtDate(o.createdAt)}.
 <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse">
 <thead>
 <tr>
-<th style="text-align:left;padding:10px;background:#f8fafc">Item</th>
-<th style="text-align:center;padding:10px;background:#f8fafc">Qty</th>
-<th style="text-align:right;padding:10px;background:#f8fafc">Price</th>
-<th style="text-align:right;padding:10px;background:#f8fafc">Total</th>
+<th style="text-align:left;padding:10px;background:#f8fafc">Items</th>
 </tr>
 </thead>
 <tbody>${itemsTable(o.items)}</tbody>
@@ -245,9 +241,6 @@ ${notesLine}
 <thead>
 <tr>
 <th style="text-align:left;padding:8px;background:#f8fafc">Item</th>
-<th style="text-align:center;padding:8px;background:#f8fafc">Qty</th>
-<th style="text-align:right;padding:8px;background:#f8fafc">Price</th>
-<th style="text-align:right;padding:8px;background:#f8fafc">Total</th>
 </tr>
 </thead>
 <tbody>${itemsTable(o.items)}</tbody>
@@ -330,7 +323,6 @@ MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(String(SMTP_USER).toL
 : fallbackFrom;
 
 // --- Build per-product warranty lines (Name — Warranty) ---
-// We read from products table by ID (order.items include id at runtime).
 let warrantyLines: string[] = [];
 try {
 const ids = (order.items as any[])
@@ -342,9 +334,7 @@ if (ids.length) {
 const rows: any[] =
 await sql`SELECT id, warranty FROM products WHERE id = ANY(${ids})`;
 for (const r of rows) {
-if (r && r.id && r.warranty) {
-map.set(String(r.id), String(r.warranty));
-}
+if (r && r.id && r.warranty) map.set(String(r.id), String(r.warranty));
 }
 }
 
@@ -360,7 +350,7 @@ console.error("[mail] warranty lookup failed:", (e as any)?.message || e);
 warrantyLines = [];
 }
 
-// 1) Customer email — attach CUSTOMER variant PDF (no signature, with system note)
+// 1) Customer email — attach CUSTOMER variant PDF
 try {
 const brand = SITE_NAME || "Manny.lk";
 let pdfCustomer: Buffer | null = null;
@@ -395,7 +385,7 @@ attachments: custAttachments,
 console.error("[mail] customer email failed:", err?.message || err);
 }
 
-// 2) Admin email — attach ADMIN variant PDF (signature/seal)
+// 2) Admin email — attach ADMIN variant PDF
 try {
 const brand = SITE_NAME || "Manny.lk";
 
