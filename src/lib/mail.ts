@@ -1,6 +1,7 @@
 // src/lib/mail.ts
 import nodemailer, { SendMailOptions } from "nodemailer";
-import { createInvoicePdf } from "./invoice"; // keep your invoice.ts as-is (it should return Buffer or throw)
+import { createInvoicePdf } from "./invoice";
+
 const {
   SMTP_HOST,
   SMTP_PORT,
@@ -19,7 +20,7 @@ type Line = { name: string; quantity: number; price: number; slug?: string };
 
 export type OrderEmail = {
   id: string;
-  createdAt: string; // ISO string
+  createdAt: string;
   customer: {
     firstName: string;
     lastName: string;
@@ -36,8 +37,6 @@ export type OrderEmail = {
       city: string;
       postal?: string;
     };
-    /** present if you later wire the “Printed invoice” checkbox */
-    wantsPrintedInvoice?: boolean;
   };
   items: Line[];
   subtotal: number;
@@ -57,33 +56,6 @@ const money = (v: number) =>
     maximumFractionDigits: 0,
   }).format(v);
 
-/**
- * 🔧 CHANGED: bulletproof item rows for mobile clients.
- * Each item renders as ONE full-width cell (colspan=4) with:
- *  - line 1: name
- *  - line 2: Qty / Price / Total (inline text)
- * No multi-column numerics → avoids overlap on Gmail iOS/Android and Outlook.
- */
-const itemsTable = (items: Line[]) =>
-  items
-    .map(
-      (i, idx) => `
-<tr>
-  <td colspan="4" style="padding:12px 10px;border-bottom:1px solid #f1f5f9;">
-    <div style="color:#0f172a;line-height:1.55;word-break:break-word;overflow-wrap:anywhere;">
-      ${escapeHtml(i.name)}
-    </div>
-    <div style="margin-top:4px;color:#334155;line-height:1.4;font-size:13px;white-space:nowrap;">
-      <span style="margin-right:12px;">Qty: ${i.quantity}</span>
-      <span style="margin-right:12px;">Price: ${money(i.price)}</span>
-      <span>Total: <b>${money(i.price * i.quantity)}</b></span>
-    </div>
-  </td>
-</tr>`
-    )
-    .join("");
-
-// Always render in Sri Lanka local time
 const LK_TZ = "Asia/Colombo";
 function fmtDate(d: string) {
   return new Intl.DateTimeFormat("en-LK", {
@@ -102,8 +74,27 @@ function escapeHtml(s: string) {
     .replace(/'/g, "&#039;");
 }
 
-/* ----------------- customer email (orders) ----------------- */
+/* ----------------- Items Table ----------------- */
+const itemsTable = (items: Line[]) =>
+  items
+    .map(
+      (i) => `
+<tr>
+  <td colspan="4" style="padding:12px 10px;border-bottom:1px solid #f1f5f9;">
+    <div style="color:#0f172a;line-height:1.55;word-break:break-word;overflow-wrap:anywhere;">${escapeHtml(
+      i.name
+    )}</div>
+    <div style="margin-top:4px;color:#334155;line-height:1.4;">
+      <span style="display:inline-block;margin-right:12px;">Qty: ${i.quantity}</span>
+      <span style="display:inline-block;margin-right:12px;">Price: ${money(i.price)}</span>
+      <span style="display:inline-block;">Total: <b>${money(i.price * i.quantity)}</b></span>
+    </div>
+  </td>
+</tr>`
+    )
+    .join("");
 
+/* ----------------- Customer Email ----------------- */
 function renderCustomerEmail(o: OrderEmail) {
   const brand = SITE_NAME || "Manny.lk";
   const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
@@ -126,7 +117,7 @@ function renderCustomerEmail(o: OrderEmail) {
 
   const notesBlock = o.customer.notes
     ? `
-<div style="padding:16px;border:1px solid ${"#e5e7eb"};border-radius:8px;background:#fff;margin-bottom:16px">
+<div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
   <div style="font-weight:600;margin-bottom:6px">Order notes</div>
   <div style="color:#334155;white-space:pre-wrap;line-height:1.6">
     ${escapeHtml(o.customer.notes)}
@@ -143,7 +134,7 @@ function renderCustomerEmail(o: OrderEmail) {
       <p style="margin:0;color:#334155">
         Your order <b>${escapeHtml(o.id)}</b> was received on ${fmtDate(o.createdAt)}.
       </p>
-      <p style="margin:6px 0 0;color:#334155"><b>Please find the attached digital invoice (PDF) for your records.</b></p>
+      <p style="margin:6px 0 0;color:#334155"><b>A digital invoice (PDF) is attached for your records.</b></p>
     </div>
 
     <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
@@ -211,8 +202,7 @@ function renderCustomerEmail(o: OrderEmail) {
 </div>`;
 }
 
-/* ----------------- admin email (orders) ----------------- */
-
+/* ----------------- Admin Email ----------------- */
 function renderAdminEmail(o: OrderEmail) {
   const shippingLine = o.customer.shipToDifferent
     ? `<div><b>Ship to:</b> ${[
@@ -257,10 +247,8 @@ function renderAdminEmail(o: OrderEmail) {
 </div>`;
 }
 
-/* ----------------- transport (verify + fallback) ----------------- */
-
+/* ----------------- Transport ----------------- */
 let cached: nodemailer.Transporter | null = null;
-
 async function makeTransport(host: string, port: number, secure: boolean) {
   const t = nodemailer.createTransport({
     host,
@@ -271,57 +259,28 @@ async function makeTransport(host: string, port: number, secure: boolean) {
     requireTLS: !secure,
     logger: true,
     debug: true,
-    connectionTimeout: 15_000,
-    greetingTimeout: 15_000,
-    socketTimeout: 20_000,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 20000,
     tls: secure ? undefined : { rejectUnauthorized: true },
   } as any);
-  // verify may throw (network / auth). Let caller handle errors.
   await t.verify();
   return t;
 }
-
 async function getTransporter(): Promise<nodemailer.Transporter> {
   if (cached) return cached;
   const host = SMTP_HOST || "smtp.zoho.com";
   const wantPort = Number(SMTP_PORT || 587);
   const wantSecure = wantPort === 465;
-
-  try {
-    console.log(`[mail] trying SMTP ${host}:${wantPort} secure=${wantSecure}`);
-    cached = await makeTransport(host, wantPort, wantSecure);
-    console.log("[mail] SMTP verify OK on desired port");
-    return cached;
-  } catch (e1: any) {
-    console.error("[mail] primary SMTP failed:", e1?.message || e1);
-    const altPort = wantPort === 465 ? 587 : 465;
-    const altSecure = altPort === 465;
-    try {
-      console.log(`[mail] trying fallback SMTP ${host}:${altPort} secure=${altSecure}`);
-      cached = await makeTransport(host, altPort, altSecure);
-      console.log("[mail] SMTP verify OK on fallback port");
-      return cached;
-    } catch (e2: any) {
-      console.error("[mail] fallback SMTP also failed:", e2?.message || e2);
-      throw e2;
-    }
-  }
+  cached = await makeTransport(host, wantPort, wantSecure);
+  return cached;
 }
-
 async function reallySend(opts: SendMailOptions) {
   const t = await getTransporter();
-  const info = await t.sendMail(opts);
-  console.log("[mail] sent:", {
-    messageId: info.messageId,
-    response: info.response,
-    to: opts.to,
-    subject: opts.subject,
-  });
-  return info;
+  return await t.sendMail(opts);
 }
 
-/* ----------------- public API (orders) ----------------- */
-
+/* ----------------- sendOrderEmails ----------------- */
 export async function sendOrderEmails(order: OrderEmail) {
   const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
   const fromHeader =
@@ -329,41 +288,41 @@ export async function sendOrderEmails(order: OrderEmail) {
       ? MAIL_FROM
       : fallbackFrom;
 
-  // 1) Customer email (unchanged)
+  // 1) Customer email (now with PDF invoice)
   try {
+    const brand = SITE_NAME || "Manny.lk";
+    let pdfCustomer: Buffer | null = null;
+    try {
+      pdfCustomer = await createInvoicePdf(order, brand);
+    } catch {
+      pdfCustomer = null;
+    }
+    const custAttachments = pdfCustomer
+      ? [{ filename: `invoice-${order.id}.pdf`, content: pdfCustomer, contentType: "application/pdf" }]
+      : [];
     await reallySend({
       from: fromHeader,
       to: order.customer.email,
       subject: `Order Confirmation — ${order.id}`,
       html: renderCustomerEmail(order),
+      attachments: custAttachments,
     });
   } catch (err: any) {
     console.error("[mail] customer email failed:", err?.message || err);
   }
 
-  // 2) Admin email + PDF invoice attachment
+  // 2) Admin email
   try {
     const brand = SITE_NAME || "Manny.lk";
-
-    // createInvoicePdf may throw (fontkit/TTF issues or runtime). We guard.
     let pdfBuffer: Buffer | null = null;
     try {
       pdfBuffer = await createInvoicePdf(order, brand);
-    } catch (pdfErr: any) {
-      console.error("[mail] createInvoicePdf failed (falling back to no-attachment):", pdfErr?.message || pdfErr);
+    } catch {
       pdfBuffer = null;
     }
-
     const attachments = pdfBuffer
-      ? [
-          {
-            filename: `invoice-${order.id}.pdf`,
-            content: pdfBuffer,
-            contentType: "application/pdf",
-          },
-        ]
+      ? [{ filename: `invoice-${order.id}.pdf`, content: pdfBuffer, contentType: "application/pdf" }]
       : [];
-
     await reallySend({
       from: fromHeader,
       to: MAIL_TO_ORDERS || SMTP_USER,
@@ -376,16 +335,8 @@ export async function sendOrderEmails(order: OrderEmail) {
   }
 }
 
-/* ----------------- contact email (admin notify) ----------------- */
-
-type ContactPayload = {
-  name: string;
-  email: string;
-  phone?: string;
-  subject?: string;
-  message: string;
-};
-
+/* ----------------- Contact Email ----------------- */
+type ContactPayload = { name: string; email: string; phone?: string; subject?: string; message: string };
 export async function sendContactEmail(payload: ContactPayload) {
   const to = MAIL_TO_CONTACT || "info@manny.lk";
   const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
@@ -395,162 +346,52 @@ export async function sendContactEmail(payload: ContactPayload) {
       : fallbackFrom;
 
   const brand = SITE_NAME || "Manny.lk";
-  const primary = "#111827";
-  const subText = "#4b5563";
-  const border = "#e5e7eb";
-  const bg = "#ffffff";
-
   const safe = (s: string | undefined) =>
-    (s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+    (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 
   const html = `
-<div style="margin:0;padding:24px;background:${bg};color:${primary};font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
-  <div style="max-width:640px;margin:0 auto;">
-    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:16px;">
-      <h2 style="margin:0 0 6px;font-size:20px;color:${primary};">New website inquiry</h2>
-      <div style="margin:0;color:${subText};">${brand}</div>
-    </div>
-
-    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
-      <div style="font-weight:600;margin-bottom:6px;color:${primary};">From</div>
-      <div style="color:${subText};">${safe(payload.name) || "-"}</div>
-      <div style="margin-top:2px;">
-        <a href="mailto:${safe(payload.email)}" style="text-decoration:none;color:#2563eb;">${safe(
-          payload.email
-        ) || "-"}</a>
-      </div>
-      <div style="margin-top:8px;">
-        <a href="mailto:${safe(payload.email)}?subject=Re:%20${encodeURIComponent(
-          payload.subject || "Your message to " + brand
-        )}"
-          style="display:inline-block;padding:8px 10px;border:1px solid ${border};border-radius:8px;text-decoration:none;color:#2563eb;">
-          Reply to customer
-        </a>
-      </div>
-    </div>
-
-    ${
-      payload.subject
-        ? `
-    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
-      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Subject</div>
-      <div style="color:${subText};">${safe(payload.subject)}</div>
-    </div>`
-        : ""
-    }
-
-    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};">
-      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Message</div>
-      <div style="white-space:pre-wrap;color:${primary};">${safe(payload.message)}</div>
-    </div>
-
-    <div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">
-      ©️ ${new Date().getFullYear()} ${brand}. All rights reserved.
-    </div>
-  </div>
+<div style="padding:24px;font-family:Inter,system-ui,sans-serif">
+  <h2>New website inquiry</h2>
+  <p>From: ${safe(payload.name)} &lt;${safe(payload.email)}&gt;</p>
+  ${payload.phone ? `<p>Phone: ${safe(payload.phone)}</p>` : ""}
+  ${payload.subject ? `<p>Subject: ${safe(payload.subject)}</p>` : ""}
+  <pre>${safe(payload.message)}</pre>
 </div>`;
 
-  try {
-    const t = await getTransporter();
-    await t.sendMail({
-      from: fromHeader,
-      to,
-      replyTo: payload.email,
-      subject: `[Contact] ${payload.subject || "Message"} — ${payload.name || "Customer"}`,
-      html,
-    });
-  } catch (err: any) {
-    console.error("[contact] send failed:", err?.message || err);
-    throw err;
-  }
+  await reallySend({
+    from: fromHeader,
+    to,
+    replyTo: payload.email,
+    subject: `[Contact] ${payload.subject || "Message"} — ${payload.name || "Customer"}`,
+    html,
+  });
 }
 
-/* ---------- Customer reply email (team → customer) ---------- */
-
-type ContactReplyPayload = {
-  customer: ContactPayload; // includes name, email, subject?, message (original)
-  replyMessage: string; // what your team wrote
-};
-
+/* ----------------- Contact Reply ----------------- */
+type ContactReplyPayload = { customer: ContactPayload; replyMessage: string };
 function renderContactReplyEmail(p: ContactReplyPayload) {
   const brand = SITE_NAME || "Manny.lk";
-  const contactEmail = MAIL_TO_CONTACT || "info@manny.lk";
-  const wa = (NEXT_PUBLIC_WHATSAPP_PHONE || "").replace(/[^\d]/g, "");
-  const waHref = wa ? `https://wa.me/${wa}` : null;
-
-  const primary = "#111827";
-  const subText = "#4b5563";
-  const border = "#e5e7eb";
-  const bg = "#ffffff";
-
   const safe = (s: string | undefined) =>
-    (s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-
+    (s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   return `
-<div style="margin:0;padding:24px;background:${bg};color:${primary};font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;">
-  <div style="max-width:640px;margin:0 auto;">
-
-    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:16px;">
-      <h2 style="margin:0 0 6px;font-size:20px;color:${primary};">Here’s your response from ${brand}</h2>
-    </div>
-
-    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
-      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Our reply</div>
-      <div style="white-space:pre-wrap;color:${primary};">${safe(p.replyMessage)}</div>
-    </div>
-
-    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
-      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Your original message</div>
-      ${p.customer.subject ? `<div style="color:${subText};margin-bottom:6px;"><b>Subject:</b> ${safe(
-        p.customer.subject
-      )}</div>` : ""}
-      <div style="white-space:pre-wrap;color:${subText};">${safe(p.customer.message)}</div>
-    </div>
-
-    <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:#f8fafc;">
-      <div style="font-weight:600;margin-bottom:6px;color:${primary};">Need more help?</div>
-      <div style="color:${subText};">
-        Just reply to this email and it will reach us directly.${waHref ? ` Or message us on <a href="${waHref}" style="text-decoration:none;color:#2563eb;">WhatsApp</a>.` : ""}
-      </div>
-    </div>
-
-    <div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">
-      ©️ ${new Date().getFullYear()} ${brand}. All rights reserved · <a href="mailto:${contactEmail}" style="text-decoration:none;color:#2563eb;">${contactEmail}</a>
-    </div>
-
-  </div>
+<div style="padding:24px;font-family:Inter,system-ui,sans-serif">
+  <h2>Here’s your response from ${brand}</h2>
+  <div><b>Our reply:</b><br/>${safe(p.replyMessage)}</div>
+  <hr/>
+  <div><b>Your original message:</b><br/>${safe(p.customer.message)}</div>
 </div>`;
 }
-
 export async function sendContactReplyEmail(p: ContactReplyPayload) {
   const fallbackFrom = `Manny.lk <${SMTP_USER}>`;
   const fromHeader =
     MAIL_FROM && SMTP_USER && MAIL_FROM.toLowerCase().includes(String(SMTP_USER).toLowerCase())
       ? MAIL_FROM
       : fallbackFrom;
-
-  try {
-    const t = await getTransporter();
-    await t.sendMail({
-      from: fromHeader,
-      to: p.customer.email,
-      replyTo: MAIL_TO_CONTACT || "info@manny.lk",
-      subject: `Thank you for your message — ${SITE_NAME || "Manny.lk"} Support`,
-      html: renderContactReplyEmail(p),
-    });
-    console.log("[contact reply] sent to", p.customer.email);
-  } catch (err: any) {
-    console.error("[contact reply] send failed:", err?.message || err);
-    throw err;
-  }
+  await reallySend({
+    from: fromHeader,
+    to: p.customer.email,
+    replyTo: MAIL_TO_CONTACT || "info@manny.lk",
+    subject: `Thank you for your message — ${SITE_NAME || "Manny.lk"} Support`,
+    html: renderContactReplyEmail(p),
+  });
 }
