@@ -288,12 +288,12 @@ export async function sendOrderEmails(order: OrderEmail) {
       ? MAIL_FROM
       : fallbackFrom;
 
-  // 1) Customer email (now with PDF invoice)
+  // 1) Customer email (customer variant PDF)
   try {
     const brand = SITE_NAME || "Manny.lk";
     let pdfCustomer: Buffer | null = null;
     try {
-      pdfCustomer = await createInvoicePdf(order, brand);
+      pdfCustomer = await createInvoicePdf(order, brand, { variant: "customer" });
     } catch {
       pdfCustomer = null;
     }
@@ -311,12 +311,12 @@ export async function sendOrderEmails(order: OrderEmail) {
     console.error("[mail] customer email failed:", err?.message || err);
   }
 
-  // 2) Admin email
+  // 2) Admin email (admin variant PDF)
   try {
     const brand = SITE_NAME || "Manny.lk";
     let pdfBuffer: Buffer | null = null;
     try {
-      pdfBuffer = await createInvoicePdf(order, brand);
+      pdfBuffer = await createInvoicePdf(order, brand, { variant: "admin" });
     } catch {
       pdfBuffer = null;
     }
