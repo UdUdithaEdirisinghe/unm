@@ -1,4 +1,5 @@
 // src/lib/mail.ts
+import "server-only";
 import nodemailer, { SendMailOptions } from "nodemailer";
 import { createInvoicePdf } from "./invoice"; // your invoice.ts handles { variant, warrantyLines }
 
