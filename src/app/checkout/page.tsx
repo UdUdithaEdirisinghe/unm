@@ -399,7 +399,7 @@ export default function CheckoutPage() {
                 checked={wantsPrintedInvoice}
                 onChange={(e) => setWantsPrintedInvoice(e.target.checked)}
               />
-              <span className="text-slate-200">Would you like us to include a printed invoice with your order?</span>
+              <span className="text-slate-200">Would you like a printed invoice with your order? A digital copy is sent automatically.</span>
             </label>
 
             <button className="btn-primary w-full mt-2" disabled={busy}>

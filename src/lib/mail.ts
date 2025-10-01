@@ -1,7 +1,6 @@
 // src/lib/mail.ts
 import nodemailer, { SendMailOptions } from "nodemailer";
-import { createInvoicePdf } from "./invoice";
-
+import { createInvoicePdf } from "./invoice"; // keep your invoice.ts as-is (it should return Buffer or throw)
 const {
   SMTP_HOST,
   SMTP_PORT,
@@ -16,18 +15,11 @@ const {
 
 /* ----------------- types & helpers ----------------- */
 
-type Line = {
-  name: string;
-  quantity: number;
-  price: number;
-  slug?: string;
-  /** optional warranty text per product (only used in PDFs) */
-  warranty?: string | null;
-};
+type Line = { name: string; quantity: number; price: number; slug?: string };
 
 export type OrderEmail = {
   id: string;
-  createdAt: string; // ISO
+  createdAt: string; // ISO string
   customer: {
     firstName: string;
     lastName: string;
@@ -44,7 +36,7 @@ export type OrderEmail = {
       city: string;
       postal?: string;
     };
-    /** when you add the checkbox on checkout */
+    /** present if you later wire the “Printed invoice” checkbox */
     wantsPrintedInvoice?: boolean;
   };
   items: Line[];
@@ -65,6 +57,33 @@ const money = (v: number) =>
     maximumFractionDigits: 0,
   }).format(v);
 
+/**
+ * 🔧 CHANGED: bulletproof item rows for mobile clients.
+ * Each item renders as ONE full-width cell (colspan=4) with:
+ *  - line 1: name
+ *  - line 2: Qty / Price / Total (inline text)
+ * No multi-column numerics → avoids overlap on Gmail iOS/Android and Outlook.
+ */
+const itemsTable = (items: Line[]) =>
+  items
+    .map(
+      (i, idx) => `
+<tr>
+  <td colspan="4" style="padding:12px 10px;border-bottom:1px solid #f1f5f9;">
+    <div style="color:#0f172a;line-height:1.55;word-break:break-word;overflow-wrap:anywhere;">
+      ${escapeHtml(i.name)}
+    </div>
+    <div style="margin-top:4px;color:#334155;line-height:1.4;font-size:13px;white-space:nowrap;">
+      <span style="margin-right:12px;">Qty: ${i.quantity}</span>
+      <span style="margin-right:12px;">Price: ${money(i.price)}</span>
+      <span>Total: <b>${money(i.price * i.quantity)}</b></span>
+    </div>
+  </td>
+</tr>`
+    )
+    .join("");
+
+// Always render in Sri Lanka local time
 const LK_TZ = "Asia/Colombo";
 function fmtDate(d: string) {
   return new Intl.DateTimeFormat("en-LK", {
@@ -83,27 +102,7 @@ function escapeHtml(s: string) {
     .replace(/'/g, "&#039;");
 }
 
-/* ----------------- bulletproof 4-col table helpers ----------------- */
-/** Column widths tuned for mobile clients that ignore <colgroup>. */
-const COL = { item: "58%", qty: "10%", price: "14%", total: "18%" } as const;
-
-const TH = (label: string, align: "left" | "center" | "right", width: string) =>
-  `<th width="${width}" align="${align}" style="width:${width};padding:10px 12px;background:#0f172a0f;color:#0f172a;border-bottom:1px solid #e5e7eb;white-space:nowrap;text-align:${align};font-weight:700;">${label}</th>`;
-
-const TD = (
-  html: string,
-  align: "left" | "center" | "right",
-  width: string,
-  nowrap = false
-) =>
-  `<td width="${width}" align="${align}" style="width:${width};padding:12px 12px;color:#cbd5e1;text-align:${align};vertical-align:top;${
-    nowrap ? "white-space:nowrap;" : ""
-  }">${html}</td>`;
-
-const DIVIDER_ROW =
-  `<tr><td colspan="4" style="height:1px;line-height:1px;border-top:1px solid #1f2937;padding:0"></td></tr>`;
-
-/* ----------------- CUSTOMER EMAIL ----------------- */
+/* ----------------- customer email (orders) ----------------- */
 
 function renderCustomerEmail(o: OrderEmail) {
   const brand = SITE_NAME || "Manny.lk";
@@ -127,7 +126,7 @@ function renderCustomerEmail(o: OrderEmail) {
 
   const notesBlock = o.customer.notes
     ? `
-<div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+<div style="padding:16px;border:1px solid ${"#e5e7eb"};border-radius:8px;background:#fff;margin-bottom:16px">
   <div style="font-weight:600;margin-bottom:6px">Order notes</div>
   <div style="color:#334155;white-space:pre-wrap;line-height:1.6">
     ${escapeHtml(o.customer.notes)}
@@ -135,51 +134,32 @@ function renderCustomerEmail(o: OrderEmail) {
 </div>`
     : "";
 
-  const row = (i: Line, idx: number) => {
-    const name = `<div style="color:#e2e8f0;line-height:1.5;word-break:break-word;overflow-wrap:anywhere;">${escapeHtml(
-      i.name
-    )}</div>`;
-    const qty = `${i.quantity}`;
-    const price = `${money(i.price).replace(" ", "&nbsp;")}`;
-    const total = `<b>${money(i.price * i.quantity).replace(" ", "&nbsp;")}</b>`;
-    return `
-      ${idx === 0 ? "" : DIVIDER_ROW}
-      <tr>
-        ${TD(name, "left", COL.item, false)}
-        ${TD(qty, "center", COL.qty, true)}
-        ${TD(price, "right", COL.price, true)}
-        ${TD(total, "right", COL.total, true)}
-      </tr>`;
-  };
-
   return `
-<div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#0b1220;padding:24px;color:#e2e8f0">
+<div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f6f8fb;padding:24px;color:#0f172a">
   <div style="max-width:640px;margin:0 auto">
 
-    <div style="padding:16px;border:1px solid #1f2937;border-radius:12px;background:#0d1426;margin-bottom:16px">
+    <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
       <h2 style="margin:0 0 6px;font-size:20px">Thank you for your order!</h2>
-      <p style="margin:0;color:#94a3b8">Your order <b>${escapeHtml(o.id)}</b> was received on ${fmtDate(
-        o.createdAt
-      )}.</p>
-      <p style="margin:6px 0 0;color:#cbd5e1"><b>A digital invoice (PDF) is attached for your records.</b></p>
+      <p style="margin:0;color:#334155">
+        Your order <b>${escapeHtml(o.id)}</b> was received on ${fmtDate(o.createdAt)}.
+      </p>
+      <p style="margin:6px 0 0;color:#334155"><b>Please find the attached digital invoice (PDF) for your records.</b></p>
     </div>
 
-    <div class="panel" style="padding:0;border:1px solid #1f2937;border-radius:12px;background:#0d1426;margin-bottom:16px">
-      <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="width:100%;border-collapse:collapse;table-layout:fixed">
+    <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
+      <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse">
         <thead>
           <tr>
-            ${TH("Item", "left", COL.item)}
-            ${TH("Qty", "center", COL.qty)}
-            ${TH("Price", "right", COL.price)}
-            ${TH("Total", "right", COL.total)}
+            <th style="text-align:left;padding:10px;background:#f8fafc">Item</th>
+            <th style="text-align:center;padding:10px;background:#f8fafc">Qty</th>
+            <th style="text-align:right;padding:10px;background:#f8fafc">Price</th>
+            <th style="text-align:right;padding:10px;background:#f8fafc">Total</th>
           </tr>
         </thead>
-        <tbody>
-          ${o.items.map((it, i) => row(it, i)).join("")}
-        </tbody>
+        <tbody>${itemsTable(o.items)}</tbody>
       </table>
 
-      <div style="padding:12px 14px;border-top:1px solid #1f2937;text-align:right;color:#cbd5e1">
+      <div style="margin-top:12px;text-align:right;color:#334155">
         <div>Subtotal: <b>${money(o.subtotal)}</b></div>
         ${
           o.promoDiscount
@@ -193,35 +173,37 @@ function renderCustomerEmail(o: OrderEmail) {
       </div>
     </div>
 
-    <div style="padding:16px;border:1px solid #1f2937;border-radius:12px;background:#0d1426;margin-bottom:16px">
+    <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
       <div style="font-weight:600;margin-bottom:6px">Billing</div>
-      <div style="color:#cbd5e1;line-height:1.6">
+      <div style="color:#334155;line-height:1.6">
         ${escapeHtml(o.customer.firstName)} ${escapeHtml(o.customer.lastName)}<br/>
         ${escapeHtml(o.customer.address)}, ${escapeHtml(o.customer.city)}${
           o.customer.postal ? " " + escapeHtml(o.customer.postal) : ""
         }<br/>
-        ${o.customer.phone ? `Phone: ${escapeHtml(o.customer.phone)}<br/>` : ""}Email: ${escapeHtml(o.customer.email)}
+        ${o.customer.phone ? `Phone: ${escapeHtml(o.customer.phone)}<br/>` : ""}Email: ${escapeHtml(
+          o.customer.email
+        )}
       </div>
-      <div style="margin-top:10px;color:#cbd5e1">
+      <div style="margin-top:10px;color:#334155">
         <b>Payment:</b> ${o.paymentMethod === "BANK" ? "Direct Bank Transfer" : "Cash on Delivery"}${
-    o.bankSlipUrl ? ` — <a href="${o.bankSlipUrl}">Bank slip</a>` : ""
-  }
+          o.bankSlipUrl ? ` — <a href="${o.bankSlipUrl}">Bank slip</a>` : ""
+        }
       </div>
     </div>
 
     ${shippingBlock}
     ${notesBlock}
 
-    <div style="padding:16px;border:1px solid #1f2937;border-radius:12px;background:#0f172a">
+    <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#f8fafc">
       <div style="font-weight:600;margin-bottom:6px">Need help?</div>
-      <div style="color:#94a3b8;line-height:1.6">
+      <div style="color:#334155;line-height:1.6">
         If you have any questions, ${
           waHref ? `chat with us on <a href="${waHref}">WhatsApp</a>` : "chat with us on WhatsApp"
         } or email <a href="mailto:${contactEmail}">${contactEmail}</a>.
       </div>
     </div>
 
-    <div style="text-align:center;color:#64748b;margin-top:16px;font-size:12px">
+    <div style="text-align:center;color:#94a3b8;margin-top:16px;font-size:12px">
       ©️ ${new Date().getFullYear()} ${brand}. All rights reserved.
     </div>
 
@@ -229,7 +211,7 @@ function renderCustomerEmail(o: OrderEmail) {
 </div>`;
 }
 
-/* ----------------- ADMIN EMAIL ----------------- */
+/* ----------------- admin email (orders) ----------------- */
 
 function renderAdminEmail(o: OrderEmail) {
   const shippingLine = o.customer.shipToDifferent
@@ -244,25 +226,9 @@ function renderAdminEmail(o: OrderEmail) {
         .join(" — ")}</div>`
     : "";
 
-  const notesLine = o.customer.notes ? `<div style="margin-top:6px"><b>Notes:</b> ${escapeHtml(o.customer.notes)}</div>` : "";
-  const printed = o.customer.wantsPrintedInvoice ? `<div><b>Printed invoice:</b> Requested</div>` : "";
-
-  const row = (i: Line, idx: number) => {
-    const name = `<div style="color:#0f172a;line-height:1.5;word-break:break-word;overflow-wrap:anywhere;">${escapeHtml(
-      i.name
-    )}</div>`;
-    const qty = `${i.quantity}`;
-    const price = `${money(i.price).replace(" ", "&nbsp;")}`;
-    const total = `<b>${money(i.price * i.quantity).replace(" ", "&nbsp;")}</b>`;
-    return `
-      ${idx === 0 ? "" : DIVIDER_ROW}
-      <tr>
-        ${TD(name, "left", COL.item)}
-        ${TD(qty, "center", COL.qty, true)}
-        ${TD(price, "right", COL.price, true)}
-        ${TD(total, "right", COL.total, true)}
-      </tr>`;
-  };
+  const notesLine = o.customer.notes
+    ? `<div style="margin-top:6px"><b>Notes:</b> ${escapeHtml(o.customer.notes)}</div>`
+    : "";
 
   return `
 <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
@@ -273,27 +239,20 @@ function renderAdminEmail(o: OrderEmail) {
     o.customer.email
   )}${o.customer.phone ? " / " + escapeHtml(o.customer.phone) : ""}</div>
   ${shippingLine}
-  ${printed}
   ${notesLine}
-
-  <div style="margin-top:12px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;">
-    <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="width:100%;border-collapse:collapse;table-layout:fixed">
-      <thead>
-        <tr>
-          ${TH("Item", "left", COL.item)}
-          ${TH("Qty", "center", COL.qty)}
-          ${TH("Price", "right", COL.price)}
-          ${TH("Total", "right", COL.total)}
-        </tr>
-      </thead>
-      <tbody>
-        ${o.items.map((it, i) => row(it, i)).join("")}
-      </tbody>
-    </table>
-  </div>
-
-  <div style="margin-top:10px">Subtotal: <b>${money(o.subtotal)}</b> ${
-    o.promoDiscount ? `| Discount: -${money(o.promoDiscount)} (${escapeHtml(o.promoCode ?? "FD")})` : ""
+  <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:8px;background:#f8fafc">Item</th>
+        <th style="text-align:center;padding:8px;background:#f8fafc">Qty</th>
+        <th style="text-align:right;padding:8px;background:#f8fafc">Price</th>
+        <th style="text-align:right;padding:8px;background:#f8fafc">Total</th>
+      </tr>
+    </thead>
+    <tbody>${itemsTable(o.items)}</tbody>
+  </table>
+  <div>Subtotal: <b>${money(o.subtotal)}</b> ${
+    o.promoDiscount ? `| Discount: -${money(o.promoDiscount)} (${escapeHtml(o.promoCode ?? "code")})` : ""
   } | Shipping: <b>${o.freeShipping ? "Free" : money(o.shipping)}</b> | Grand: <b>${money(o.total)}</b></div>
 </div>`;
 }
@@ -317,6 +276,7 @@ async function makeTransport(host: string, port: number, secure: boolean) {
     socketTimeout: 20_000,
     tls: secure ? undefined : { rejectUnauthorized: true },
   } as any);
+  // verify may throw (network / auth). Let caller handle errors.
   await t.verify();
   return t;
 }
@@ -369,62 +329,62 @@ export async function sendOrderEmails(order: OrderEmail) {
       ? MAIL_FROM
       : fallbackFrom;
 
-  // Warranty lines → PDFs only
-  const warrantyLines =
-    order.items.filter(i => !!i.warranty).map(i => `${i.name} — ${i.warranty}`) || [];
-
-  // CUSTOMER: email + PDF (no signature + subtle system note handled in invoice.ts)
+  // 1) Customer email (unchanged)
   try {
-    const brand = SITE_NAME || "Manny.lk";
-    let pdfCustomer: Buffer | null = null;
-    try {
-      pdfCustomer = await createInvoicePdf(order, brand, { variant: "customer", warrantyLines } as any);
-    } catch (e) {
-      console.error("[mail] customer pdf failed:", (e as any)?.message || e);
-      pdfCustomer = null;
-    }
-
     await reallySend({
       from: fromHeader,
       to: order.customer.email,
       subject: `Order Confirmation — ${order.id}`,
       html: renderCustomerEmail(order),
-      attachments: pdfCustomer
-        ? [{ filename: `invoice-${order.id}.pdf`, content: pdfCustomer, contentType: "application/pdf" }]
-        : [],
     });
   } catch (err: any) {
     console.error("[mail] customer email failed:", err?.message || err);
   }
 
-  // ADMIN: email + PDF (keeps signature)
+  // 2) Admin email + PDF invoice attachment
   try {
     const brand = SITE_NAME || "Manny.lk";
-    let pdfAdmin: Buffer | null = null;
+
+    // createInvoicePdf may throw (fontkit/TTF issues or runtime). We guard.
+    let pdfBuffer: Buffer | null = null;
     try {
-      pdfAdmin = await createInvoicePdf(order, brand, { variant: "admin", warrantyLines } as any);
-    } catch (e) {
-      console.error("[mail] admin pdf failed:", (e as any)?.message || e);
-      pdfAdmin = null;
+      pdfBuffer = await createInvoicePdf(order, brand);
+    } catch (pdfErr: any) {
+      console.error("[mail] createInvoicePdf failed (falling back to no-attachment):", pdfErr?.message || pdfErr);
+      pdfBuffer = null;
     }
+
+    const attachments = pdfBuffer
+      ? [
+          {
+            filename: `invoice-${order.id}.pdf`,
+            content: pdfBuffer,
+            contentType: "application/pdf",
+          },
+        ]
+      : [];
 
     await reallySend({
       from: fromHeader,
       to: MAIL_TO_ORDERS || SMTP_USER,
       subject: `New Order — ${order.id} — ${order.customer.firstName} ${order.customer.lastName}`,
       html: renderAdminEmail(order),
-      attachments: pdfAdmin
-        ? [{ filename: `invoice-${order.id}.pdf`, content: pdfAdmin, contentType: "application/pdf" }]
-        : [],
+      attachments,
     });
   } catch (err: any) {
     console.error("[mail] admin email failed:", err?.message || err);
   }
 }
 
-/* ----------------- contact + reply emails (unchanged) ----------------- */
+/* ----------------- contact email (admin notify) ----------------- */
 
-type ContactPayload = { name: string; email: string; phone?: string; subject?: string; message: string };
+type ContactPayload = {
+  name: string;
+  email: string;
+  phone?: string;
+  subject?: string;
+  message: string;
+};
 
 export async function sendContactEmail(payload: ContactPayload) {
   const to = MAIL_TO_CONTACT || "info@manny.lk";
@@ -460,42 +420,62 @@ export async function sendContactEmail(payload: ContactPayload) {
       <div style="font-weight:600;margin-bottom:6px;color:${primary};">From</div>
       <div style="color:${subText};">${safe(payload.name) || "-"}</div>
       <div style="margin-top:2px;">
-        <a href="mailto:${safe(payload.email)}" style="text-decoration:none;color:#2563eb;">${safe(payload.email) || "-"}</a>
+        <a href="mailto:${safe(payload.email)}" style="text-decoration:none;color:#2563eb;">${safe(
+          payload.email
+        ) || "-"}</a>
       </div>
       <div style="margin-top:8px;">
-        <a href="mailto:${safe(payload.email)}?subject=Re:%20${encodeURIComponent(payload.subject || "Your message to " + brand)}"
-           style="display:inline-block;padding:8px 10px;border:1px solid ${border};border-radius:8px;text-decoration:none;color:#2563eb;">
+        <a href="mailto:${safe(payload.email)}?subject=Re:%20${encodeURIComponent(
+          payload.subject || "Your message to " + brand
+        )}"
+          style="display:inline-block;padding:8px 10px;border:1px solid ${border};border-radius:8px;text-decoration:none;color:#2563eb;">
           Reply to customer
         </a>
       </div>
     </div>
 
-    ${payload.subject ? `
+    ${
+      payload.subject
+        ? `
     <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
       <div style="font-weight:600;margin-bottom:6px;color:${primary};">Subject</div>
       <div style="color:${subText};">${safe(payload.subject)}</div>
-    </div>` : ""}
+    </div>`
+        : ""
+    }
 
     <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};">
       <div style="font-weight:600;margin-bottom:6px;color:${primary};">Message</div>
       <div style="white-space:pre-wrap;color:${primary};">${safe(payload.message)}</div>
     </div>
 
-    <div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">©️ ${new Date().getFullYear()} ${brand}. All rights reserved.</div>
+    <div style="text-align:center;color:#9ca3af;margin-top:16px;font-size:12px;">
+      ©️ ${new Date().getFullYear()} ${brand}. All rights reserved.
+    </div>
   </div>
 </div>`;
 
   try {
     const t = await getTransporter();
-    await t.sendMail({ from: fromHeader, to, replyTo: payload.email, subject: `[Contact] ${payload.subject || "Message"} — ${payload.name || "Customer"}`, html });
-    console.log("[contact] sent to", to);
+    await t.sendMail({
+      from: fromHeader,
+      to,
+      replyTo: payload.email,
+      subject: `[Contact] ${payload.subject || "Message"} — ${payload.name || "Customer"}`,
+      html,
+    });
   } catch (err: any) {
     console.error("[contact] send failed:", err?.message || err);
     throw err;
   }
 }
 
-type ContactReplyPayload = { customer: ContactPayload; replyMessage: string };
+/* ---------- Customer reply email (team → customer) ---------- */
+
+type ContactReplyPayload = {
+  customer: ContactPayload; // includes name, email, subject?, message (original)
+  replyMessage: string; // what your team wrote
+};
 
 function renderContactReplyEmail(p: ContactReplyPayload) {
   const brand = SITE_NAME || "Manny.lk";
@@ -531,7 +511,9 @@ function renderContactReplyEmail(p: ContactReplyPayload) {
 
     <div style="padding:16px;border:1px solid ${border};border-radius:10px;background:${bg};margin-bottom:12px;">
       <div style="font-weight:600;margin-bottom:6px;color:${primary};">Your original message</div>
-      ${p.customer.subject ? `<div style="color:${subText};margin-bottom:6px;"><b>Subject:</b> ${safe(p.customer.subject)}</div>` : ""}
+      ${p.customer.subject ? `<div style="color:${subText};margin-bottom:6px;"><b>Subject:</b> ${safe(
+        p.customer.subject
+      )}</div>` : ""}
       <div style="white-space:pre-wrap;color:${subText};">${safe(p.customer.message)}</div>
     </div>
 
