@@ -389,7 +389,7 @@ export default function CheckoutPage() {
             <label className="mt-2 flex items-center gap-2">
               <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
               <span className="text-slate-200">
-                I agree to the <Link href="/policies" className="underline">Terms & Conditions</Link>.
+                I agree to the <Link href="/terms" className="underline">Terms & Conditions</Link>.
               </span>
             </label>
 
