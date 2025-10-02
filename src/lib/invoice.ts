@@ -465,19 +465,21 @@ export async function createInvoicePdf(
     body += BT(Math.max(sealX + 8, sigX), sigBaseline, sigSize) + T(sigText) + ET;
     y -= sealH + 20;
   } else {
-    // Subtle footer-style line (no box) – on last page; move if needed
-    const sysNote =
-      "This is a computer-generated invoice. No physical signature is required.";
-    const noteH = 12 + 10;
+    // Customer variant: place the system note **near the bottom**, above the copyright.
+    // (Pinned location so it doesn't float mid-page.)
+    const sysNote = "This is a computer-generated invoice. No physical signature is required.";
 
-    if (needSpace(noteH + 30)) {
+    // Keep it above copyright (copyright is at y = MARGIN + 30).
+    const sysY = MARGIN + 44; // sits just above the copyright line
+    const est = sysNote.length * FONT.avgChar(FONT.size.small);
+    const sysX = left + (width - Math.min(est, width - 20)) / 2;
+
+    // Ensure we don't collide: if content is already too low, push a new page.
+    if (y - 20 < sysY + 10) {
       commitPage();
       y = top;
     }
 
-    const est = sysNote.length * FONT.avgChar(FONT.size.small);
-    const sysX = left + (width - Math.min(est, width - 20)) / 2;
-    const sysY = Math.max(MARGIN + 50, y - 16); // keep about the same vertical feeling
     body += BT(Math.max(left + 10, sysX), sysY, FONT.size.small) + T(sysNote) + ET;
   }
 
@@ -505,12 +507,7 @@ export async function createInvoicePdf(
 
   const pagesWithNumbers = pages.map((pg, i) => {
     const label = `Page ${i + 1} of ${totalPages}`;
-    return (
-      pg +
-      BT(pageNumX, pageNumY, FONT.size.small) +
-      T(label) +
-      ET
-    );
+    return pg + BT(pageNumX, pageNumY, FONT.size.small) + T(label) + ET;
   });
 
   return assembleMulti(pagesWithNumbers);

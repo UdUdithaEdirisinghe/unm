@@ -39,6 +39,7 @@ address: string;
 city: string;
 postal?: string;
 };
+wantsPrintedInvoice?: boolean; // stored in customer JSON
 };
 items: Line[];
 subtotal: number;
@@ -49,6 +50,7 @@ promoDiscount: number | null;
 freeShipping: boolean;
 paymentMethod: "COD" | "BANK";
 bankSlipUrl?: string | null;
+printedInvoice?: boolean; // top-level (preferred)
 };
 
 const money = (v: number) =>
@@ -149,9 +151,7 @@ Your order <b>${escapeHtml(o.id)}</b> was received on ${fmtDate(o.createdAt)}.
 <div style="padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;margin-bottom:16px">
 <table cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse">
 <thead>
-<tr>
-<th style="text-align:left;padding:10px;background:#f8fafc">Items</th>
-</tr>
+<tr><th style="text-align:left;padding:10px;background:#f8fafc">Items</th></tr>
 </thead>
 <tbody>${itemsTable(o.items)}</tbody>
 </table>
@@ -227,6 +227,16 @@ const notesLine = o.customer.notes
 ? `<div style="margin-top:6px"><b>Notes:</b> ${escapeHtml(o.customer.notes)}</div>`
 : "";
 
+// ✅ FIX: Printed invoice line (check both top-level and inside customer JSON)
+const printedInvoiceRequired =
+typeof o.printedInvoice !== "undefined"
+? o.printedInvoice
+: (o.customer as any)?.wantsPrintedInvoice || false;
+
+const printedInvoiceLine = `<div><b>Printed Invoice Required:</b> ${
+printedInvoiceRequired ? "Yes" : "No"
+}</div>`;
+
 return `
 <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a">
 <h2 style="margin:0 0 8px">New order received: ${escapeHtml(o.id)}</h2>
@@ -237,11 +247,10 @@ o.customer.email
 )}${o.customer.phone ? " / " + escapeHtml(o.customer.phone) : ""}</div>
 ${shippingLine}
 ${notesLine}
+${printedInvoiceLine}
 <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e5e7eb;width:100%;margin:12px 0">
 <thead>
-<tr>
-<th style="text-align:left;padding:8px;background:#f8fafc">Item</th>
-</tr>
+<tr><th style="text-align:left;padding:8px;background:#f8fafc">Item</th></tr>
 </thead>
 <tbody>${itemsTable(o.items)}</tbody>
 </table>
