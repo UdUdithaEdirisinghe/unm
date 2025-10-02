@@ -17,18 +17,9 @@ export default function PrivacyPolicy() {
         <div>
           <h2 className="text-xl font-semibold mt-8 mb-3">Information We Collect</h2>
           <ul>
-            <li>
-              <strong>Personal details</strong> (name, email, phone number, address) during registration
-              or checkout.
-            </li>
-            <li>
-              <strong>Payment and billing information</strong> (securely processed via trusted
-              third-party providers).
-            </li>
-            <li>
-              <strong>Browsing data</strong> (IP address, browser type, device information) via
-              cookies and analytics tools.
-            </li>
+            <li>Personal details (name, email, phone number) during registration or checkout.</li>
+            <li>Payment and billing information (securely processed via trusted third-party providers).</li>
+            <li>Browsing data (IP address, browser type, device information) via cookies and analytics tools.</li>
           </ul>
         </div>
 
@@ -41,8 +32,7 @@ export default function PrivacyPolicy() {
             <li>To detect and prevent fraudulent or unauthorized activities.</li>
             <li>
               Since we run ads on Facebook, TikTok, and Instagram, we may use browsing data for
-              targeted advertising through third-party platforms, in accordance with their
-              privacy policies.
+              targeted advertising through third-party platforms, in accordance with their privacy policies.
             </li>
           </ul>
         </div>
@@ -59,16 +49,14 @@ export default function PrivacyPolicy() {
         <div>
           <h2 className="text-xl font-semibold mt-8 mb-3">Data Security</h2>
           <p>
-            We use industry-standard security practices to protect your personal data. However,
-            no system is 100% secure, and we cannot guarantee absolute safety.
+            We use industry-standard security practices to protect your personal data. However, no system is 100% secure, and we cannot guarantee absolute safety.
           </p>
         </div>
 
         <div>
           <h2 className="text-xl font-semibold mt-8 mb-3">Cookies</h2>
           <p>
-            We use cookies to enhance your browsing experience. You can disable cookies in your
-            browser settings, but this may affect site functionality.
+            We use cookies to enhance your browsing experience. You can disable cookies in your browser settings, but this may affect site functionality.
           </p>
         </div>
       </div>

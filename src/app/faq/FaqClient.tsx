@@ -7,39 +7,71 @@ type QA = { q: string; a: string };
 const faqs: QA[] = [
   {
     q: "How do I place an order?",
-    a: "Browse products, add items to your cart, and proceed to checkout. Fill in delivery details, choose a payment method, and confirm. You’ll receive an order number and email/SMS confirmation.",
+    a: `To place an order:
+
+Add items to your cart – Browse and select the products you want.
+
+Proceed to checkout – Review your cart and click “Checkout.”
+
+Enter delivery details – Provide your shipping address and contact info.
+
+Choose a payment method – Select your preferred payment option.
+
+Place your order – Confirm everything and submit your order.
+
+Prefer messaging? You can also place orders via WhatsApp for added convenience.`,
   },
   {
     q: "Do I need an account to place an order?",
-    a: "No, guest checkout is supported. Creating an account lets you track orders, view history, and checkout faster next time.",
-  },
-  {
-    q: "What shipping methods are available?",
-    a: "We deliver island-wide via trusted couriers. Express/priority options may appear at checkout depending on your address.",
-  },
-  {
-    q: "How long will delivery take?",
-    a: "Colombo/Greater Colombo: 1–3 working days. Other districts: 2–5 working days. Pre-orders ship on or after the indicated date.",
+    a: `No account needed. All orders are placed as a guest, and we don’t store customer accounts. You’ll receive order confirmations and updates via the email or phone number you provide at checkout.`,
   },
   {
     q: "What payment methods do you accept?",
-    a: "Cash on Delivery (selected areas), bank transfer, and card payments where available. Payment options are shown at checkout.",
+    a: `We currently accept the following payment options:
+
+Cash on Delivery – Available island-wide with no extra fee.
+
+Bank Transfer – Bank details and a slip upload option are provided at checkout.
+
+Card Payments – A secure card payment gateway is coming soon.`,
   },
   {
-    q: "Can I cancel or change my order?",
-    a: "If your order hasn’t shipped, contact us as soon as possible and we’ll try our best to help. Shipped orders can be handled via our returns policy.",
+    q: "What shipping methods are available?",
+    a: `We offer island-wide courier delivery via Koombiyo.
+
+Flat rate: LKR 400 anywhere in Sri Lanka
+
+Delivery time: Typically 1–3 working days.`,
   },
   {
-    q: "What is your return/warranty policy?",
-    a: "Most items include a limited warranty from the brand or distributor. Defects are handled per our Returns & Warranty Policy. Physical or liquid damage is not covered.",
+    q: "What is your return policy?",
+    a: `If your order arrives defective or incorrect, we’ll offer a free replacement or refund.
+
+If you’d like to exchange a product, you can do so within 7 days, provided it’s in its original condition. Return shipping costs are covered by you, and refunds are issued as store credit.
+
+Please note: Some items are non-returnable. Details are provided at checkout or on the product page.`,
   },
   {
-    q: "Are products genuine?",
-    a: "Yes. We source from official brands and authorized distributors. Product pages list what’s included and any regional notes.",
+    q: "Do your products have a warranty?",
+    a: `Yes. Warranty details—such as 6 months, 1 year, or checking warranty—are clearly listed on each product page.
+
+Warranties cover manufacturing defects only. They do not cover:
+
+• Physical or water damage  
+• Unauthorized repairs  
+• Misuse or mishandling`,
   },
   {
-    q: "Do you offer bulk or corporate pricing?",
-    a: "Yes—message us with your list and quantities and we’ll send you a quote and lead times.",
+    q: "How can I contact support?",
+    a: `We’re here to help—reach us in the way that’s most convenient for you:
+
+Call: +94 76 070 3523
+
+Email: info@manny.lk
+
+WhatsApp: Message us directly for quick assistance
+
+Contact Page: You can also reach us via the Contact page on our website`,
   },
 ];
 
@@ -86,7 +118,7 @@ function Item({
           open ? "grid grid-rows-[1fr]" : "grid grid-rows-[0fr]"
         }`}
       >
-        <div className="overflow-hidden">
+        <div className="overflow-hidden whitespace-pre-wrap">
           <p className="pt-1">{qa.a}</p>
         </div>
       </div>

@@ -20,7 +20,19 @@ const faqLd = {
       acceptedAnswer: {
         "@type": "Answer",
         text:
-          "Browse products, add items to your cart, then proceed to checkout to confirm delivery details and payment. You’ll get an email and an order number once it’s placed.",
+`To place an order:
+
+Add items to your cart – Browse and select the products you want.
+
+Proceed to checkout – Review your cart and click “Checkout.”
+
+Enter delivery details – Provide your shipping address and contact info.
+
+Choose a payment method – Select your preferred payment option.
+
+Place your order – Confirm everything and submit your order.
+
+Prefer messaging? You can also place orders via WhatsApp for added convenience.`,
       },
     },
     {
@@ -29,7 +41,7 @@ const faqLd = {
       acceptedAnswer: {
         "@type": "Answer",
         text:
-          "No. You can checkout as a guest. Creating an account lets you track orders and speeds up future checkouts.",
+`No account needed. All orders are placed as a guest, and we don’t store customer accounts. You’ll receive order confirmations and updates via the email or phone number you provide at checkout.`,
       },
     },
     {
@@ -38,7 +50,17 @@ const faqLd = {
       acceptedAnswer: {
         "@type": "Answer",
         text:
-          "We offer island-wide courier delivery. Express options may be available at checkout depending on your address.",
+`We offer island-wide courier delivery via Koombiyo.
+
+Flat rate: LKR 400 anywhere in Sri Lanka
+
+Delivery time: Typically 1–3 working days.
+
+Cash on Delivery – Available island-wide with no extra fee.
+
+Bank Transfer – Bank details and a slip upload option are provided at checkout.
+
+Card Payments – A secure card payment gateway is coming soon.`,
       },
     },
   ],
