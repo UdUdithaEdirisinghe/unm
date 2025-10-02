@@ -18,7 +18,7 @@ export default function PrivacyPolicy() {
           <h2 className="text-xl font-semibold mt-8 mb-3">Information We Collect</h2>
           <ul>
             <li>
-              <strong>Personal details</strong> (name, email, phone number) during registration
+              <strong>Personal details</strong> (name, email, phone number, address) during registration
               or checkout.
             </li>
             <li>
