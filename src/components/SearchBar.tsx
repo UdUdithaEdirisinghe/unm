@@ -9,7 +9,7 @@ import { FormEvent, useState } from "react";
  */
 export default function SearchBar({
   initial = "",
-  placeholder = "Search power banks,earbuds, cables...",
+  placeholder = "Search for products...",
   className = "",
 }: {
   initial?: string;
