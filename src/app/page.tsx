@@ -182,7 +182,7 @@ export default async function HomePage() {
           Upgrade your essentials: modern accessories designed for seamless performance.
         </p>
         <SearchBar
-          placeholder="Search power banks, earbuds, cables…"
+          placeholder="Search for products..."
           className="mt-6 max-w-xl"
         />
       </section>
