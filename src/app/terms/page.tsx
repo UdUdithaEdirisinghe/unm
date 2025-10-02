@@ -16,10 +16,9 @@ export default function TermsConditions() {
         <div>
           <h2 className="text-xl font-semibold mt-8 mb-3">Purchases &amp; Eligibility</h2>
           <ul>
-            <li>Customers do not have to be 18 years old to make purchases.</li>
             <li>
-              If a customer is under 18 years old, purchases must be made with the consent of a{" "}
-              <strong>parent or guardian</strong>.
+              Customers of any age may make purchases. If the customer is under 18 years old,
+              the purchase must be made with the consent of a <strong>parent or guardian</strong>.
             </li>
             <li>Customers agree to provide accurate and up-to-date information when placing orders.</li>
           </ul>
