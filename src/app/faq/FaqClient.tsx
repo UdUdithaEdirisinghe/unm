@@ -7,71 +7,93 @@ type QA = { q: string; a: string };
 const faqs: QA[] = [
   {
     q: "How do I place an order?",
-    a: `To place an order:
-
-Add items to your cart – Browse and select the products you want.
-
-Proceed to checkout – Review your cart and click “Checkout.”
-
-Enter delivery details – Provide your shipping address and contact info.
-
-Choose a payment method – Select your preferred payment option.
-
-Place your order – Confirm everything and submit your order.
-
-Prefer messaging? You can also place orders via WhatsApp for added convenience.`,
+    a: `
+      <p><strong>To place an order:</strong></p>
+      <ul class="list-disc pl-5 mt-2 space-y-1">
+        <li><strong>Add items to your cart</strong> – Browse and select the products you want.</li>
+        <li><strong>Proceed to checkout</strong> – Review your cart and click “Checkout.”</li>
+        <li><strong>Enter delivery details</strong> – Provide your shipping address and contact info.</li>
+        <li><strong>Choose a payment method</strong> – Select your preferred payment option.</li>
+        <li><strong>Place your order</strong> – Confirm everything and submit your order.</li>
+      </ul>
+      <p class="mt-2">Prefer messaging? You can also place orders via <strong>WhatsApp</strong> for added convenience.</p>
+    `,
   },
   {
     q: "Do I need an account to place an order?",
-    a: `No account needed. All orders are placed as a guest, and we don’t store customer accounts. You’ll receive order confirmations and updates via the email or phone number you provide at checkout.`,
-  },
-  {
-    q: "What payment methods do you accept?",
-    a: `We currently accept the following payment options:
-
-Cash on Delivery – Available island-wide with no extra fee.
-
-Bank Transfer – Bank details and a slip upload option are provided at checkout.
-
-Card Payments – A secure card payment gateway is coming soon.`,
+    a: `
+      <p><strong>No account needed.</strong> All orders are placed as a guest, and we don’t maintain customer accounts.</p>
+      <p class="mt-2">You’ll receive order confirmations and updates via the <strong>email</strong> you provide at checkout.</p>
+    `,
   },
   {
     q: "What shipping methods are available?",
-    a: `We offer island-wide courier delivery via Koombiyo.
-
-Flat rate: LKR 400 anywhere in Sri Lanka
-
-Delivery time: Typically 1–3 working days.`,
+    a: `
+      <p>We offer island-wide courier delivery via <strong>Koombiyo</strong>.</p>
+      <ul class="list-disc pl-5 mt-2 space-y-1">
+        <li><strong>Flat rate:</strong> LKR 400 anywhere in Sri Lanka</li>
+        <li><strong>Delivery time:</strong> Typically <strong>1–3 working days</strong></li>
+      </ul>
+    `,
   },
   {
-    q: "What is your return policy?",
-    a: `If your order arrives defective or incorrect, we’ll offer a free replacement or refund.
-
-If you’d like to exchange a product, you can do so within 7 days, provided it’s in its original condition. Return shipping costs are covered by you, and refunds are issued as store credit.
-
-Please note: Some items are non-returnable. Details are provided at checkout or on the product page.`,
+    q: "What payment methods do you accept?",
+    a: `
+      <p>We currently accept the following payment options:</p>
+      <ul class="list-disc pl-5 mt-2 space-y-1">
+        <li><strong>Cash on Delivery (COD)</strong> – Island-wide with <strong>no extra fee</strong>.</li>
+        <li><strong>Bank Transfer</strong> – Bank details and a <strong>slip upload</strong> option are provided at checkout.</li>
+        <li><strong>Card Payments</strong> – A secure card payment gateway is <em>coming soon</em>.</li>
+      </ul>
+    `,
   },
   {
-    q: "Do your products have a warranty?",
-    a: `Yes. Warranty details—such as 6 months, 1 year, or checking warranty—are clearly listed on each product page.
-
-Warranties cover manufacturing defects only. They do not cover:
-
-• Physical or water damage  
-• Unauthorized repairs  
-• Misuse or mishandling`,
+    q: "Can I cancel or change my order?",
+    a: `
+      <p>If your order hasn’t shipped, <strong>contact us as soon as possible</strong> and we’ll try our best to help.</p>
+      <p class="mt-2">Shipped orders can be handled via our <strong>Returns &amp; Warranty Policy</strong>.</p>
+    `,
+  },
+  {
+    q: "What is your return/warranty policy?",
+    a: `
+      <p><strong>Returns (defective or incorrect items):</strong> If your order arrives defective or incorrect, we’ll offer a <strong>free replacement</strong> or <strong>refund</strong>.</p>
+      <p class="mt-2"><strong>Exchanges (change of mind):</strong> You can request an exchange within <strong>7 days</strong>, provided the product is in its original condition. Return shipping is covered by you, and refunds are issued as <strong>store credit</strong>.</p>
+      <p class="mt-2"><strong>Warranty:</strong> Warranty details—such as <strong>6 months</strong>, <strong>1 year</strong>, or <strong>checking warranty</strong>—are clearly listed on each product page.</p>
+      <p class="mt-1">Warranties cover <strong>manufacturing defects only</strong> and do <em>not</em> cover:</p>
+      <ul class="list-disc pl-5 mt-1 space-y-1">
+        <li>Physical or water damage</li>
+        <li>Unauthorized repairs</li>
+        <li>Misuse or mishandling</li>
+      </ul>
+      <p class="mt-2"><em>Some items are non-returnable. Details are provided at checkout or on the product page.</em></p>
+    `,
+  },
+ {
+  q: "Are products genuine?",
+  a: `
+    <p>Yes. The vast majority of our products are sourced from <strong>official brands</strong> and <strong>authorized distributors</strong>.</p>
+    <p class="mt-2">We also offer a very limited selection of <strong>Grade A items</strong>—high-quality alternatives that are clearly labeled on product pages.</p>
+    <p class="mt-2">Each listing includes what's in the box and any relevant regional notes.</p>
+  `,
+  },  
+  {
+    q: "Do you offer bulk or corporate pricing?",
+    a: `
+      <p>Yes — message us with your <strong>list and quantities</strong>, and we’ll send you a quote and lead times.</p>
+    `,
   },
   {
     q: "How can I contact support?",
-    a: `We’re here to help—reach us in the way that’s most convenient for you:
-
-Call: +94 76 070 3523
-
-Email: info@manny.lk
-
-WhatsApp: Message us directly for quick assistance
-
-Contact Page: You can also reach us via the Contact page on our website`,
+    a: `
+      <p>We’re here to help — reach us in the way that’s most convenient for you:</p>
+      <ul class="list-disc pl-5 mt-2 space-y-1">
+        <li><strong>Call:</strong> +94 76 070 3523</li>
+        <li><strong>Email:</strong> info@manny.lk</li>
+        <li><strong>WhatsApp:</strong> Message us directly for quick assistance</li>
+        <li><strong>Contact Page:</strong> You can also reach us via the Contact page on our website</li>
+      </ul>
+    `,
   },
 ];
 
@@ -118,8 +140,9 @@ function Item({
           open ? "grid grid-rows-[1fr]" : "grid grid-rows-[0fr]"
         }`}
       >
-        <div className="overflow-hidden whitespace-pre-wrap">
-          <p className="pt-1">{qa.a}</p>
+        <div className="overflow-hidden">
+          {/* Render the formatted HTML answer. Container/classes unchanged. */}
+          <div className="pt-1" dangerouslySetInnerHTML={{ __html: qa.a }} />
         </div>
       </div>
     </div>

@@ -20,19 +20,7 @@ const faqLd = {
       acceptedAnswer: {
         "@type": "Answer",
         text:
-`To place an order:
-
-Add items to your cart – Browse and select the products you want.
-
-Proceed to checkout – Review your cart and click “Checkout.”
-
-Enter delivery details – Provide your shipping address and contact info.
-
-Choose a payment method – Select your preferred payment option.
-
-Place your order – Confirm everything and submit your order.
-
-Prefer messaging? You can also place orders via WhatsApp for added convenience.`,
+          "To place an order:\n\nAdd items to your cart – Browse and select the products you want.\n\nProceed to checkout – Review your cart and click “Checkout.”\n\nEnter delivery details – Provide your shipping address and contact info.\n\nChoose a payment method – Select your preferred payment option.\n\nPlace your order – Confirm everything and submit your order.\n\nPrefer messaging? You can also place orders via WhatsApp for added convenience.",
       },
     },
     {
@@ -41,7 +29,7 @@ Prefer messaging? You can also place orders via WhatsApp for added convenience.`
       acceptedAnswer: {
         "@type": "Answer",
         text:
-`No account needed. All orders are placed as a guest, and we don’t store customer accounts. You’ll receive order confirmations and updates via the email or phone number you provide at checkout.`,
+          "No account needed. All orders are placed as a guest, and we don’t store customer accounts. You’ll receive order confirmations and updates via the email or phone number you provide at checkout.",
       },
     },
     {
@@ -50,17 +38,7 @@ Prefer messaging? You can also place orders via WhatsApp for added convenience.`
       acceptedAnswer: {
         "@type": "Answer",
         text:
-`We offer island-wide courier delivery via Koombiyo.
-
-Flat rate: LKR 400 anywhere in Sri Lanka
-
-Delivery time: Typically 1–3 working days.
-
-Cash on Delivery – Available island-wide with no extra fee.
-
-Bank Transfer – Bank details and a slip upload option are provided at checkout.
-
-Card Payments – A secure card payment gateway is coming soon.`,
+          "We offer island-wide courier delivery via Koombiyo.\n\nFlat rate: LKR 400 anywhere in Sri Lanka\n\nDelivery time: Typically 1–3 working daysCash on Delivery – Available island-wide with no extra fee.\n\nBank Transfer – Bank details and a slip upload option are provided at checkout.\n\nCard Payments – A secure card payment gateway is coming soon.",
       },
     },
   ],
