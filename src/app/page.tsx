@@ -176,11 +176,10 @@ export default async function HomePage() {
       {/* Hero (unchanged) */}
       <section className="rounded-2xl border border-slate-800/60 bg-[rgba(10,15,28,0.9)] px-4 py-10 sm:px-8">
         <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
-          Tech for everybody.
+          Your upgrade starts here.
         </h1>
         <p className="mt-3 text-slate-300 max-w-2xl">
-          Laptops, audio and mobile accessories across every budget. Clear specs,
-          fair pricing, local support.
+          Upgrade your essentials: modern accessories designed for seamless performance.
         </p>
         <SearchBar
           placeholder="Search power banks, earbuds, chargers…"
