@@ -1,4 +1,3 @@
-// src/app/api/admin/logout/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 
@@ -9,11 +8,12 @@ export async function POST(req: NextRequest) {
   const csrfHeader = req.headers.get("x-csrf-token") || "";
   const csrfCookie = req.cookies.get(CSRF_COOKIE)?.value || "";
 
-  if (
-    !csrfHeader ||
-    !csrfCookie ||
-    !crypto.timingSafeEqual(Buffer.from(csrfHeader), Buffer.from(csrfCookie))
-  ) {
+  const sameLength = csrfHeader.length > 0 && csrfHeader.length === csrfCookie.length;
+  const timingSafeOk =
+    sameLength &&
+    crypto.timingSafeEqual(Buffer.from(csrfHeader, "utf8"), Buffer.from(csrfCookie, "utf8"));
+
+  if (!timingSafeOk) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 

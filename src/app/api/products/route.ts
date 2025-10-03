@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { getProducts, getProductsByCategory, createProduct, type Product } from "../../../lib/products";
+import {
+  getProducts,
+  getProductsByCategory,
+  createProduct,
+  type Product,
+} from "../../../lib/products";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -32,10 +37,17 @@ export async function POST(req: Request) {
     const slug = (body.slug ?? "").toString().trim();
     const price = Number(body.price);
     const stock = Number(body.stock ?? 0);
-    const images = Array.isArray(body.images) ? body.images : (body.image ? [body.image] : []);
+    const images = Array.isArray(body.images)
+      ? body.images
+      : body.image
+      ? [body.image]
+      : [];
 
     if (!name || !slug || !Number.isFinite(price) || images.length === 0) {
-      return j({ error: "Missing required fields: name, slug, price, images." }, 400);
+      return j(
+        { error: "Missing required fields: name, slug, price, images." },
+        400
+      );
     }
 
     const created = await createProduct({
@@ -44,14 +56,19 @@ export async function POST(req: Request) {
       images,
       price,
       salePrice:
-        body.salePrice === null || body.salePrice === undefined ? null : Number(body.salePrice),
+        body.salePrice === null || body.salePrice === undefined
+          ? null
+          : Number(body.salePrice),
       shortDesc: body.shortDesc ?? null,
       brand: body.brand ?? null,
       category: body.category ?? null,
       specs: (body.specs as Record<string, string> | null) ?? null,
       stock: Number.isFinite(stock) ? stock : 0,
-      // NEW
+      // existing field
       warranty: body.warranty ?? null,
+      // NEW: persist featured
+      featured:
+        typeof body.featured === "boolean" ? body.featured : Boolean(body.featured),
     });
 
     return j(created, 201);

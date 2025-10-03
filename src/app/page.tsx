@@ -1,7 +1,8 @@
+// src/app/page.tsx
 import Link from "next/link";
 import ProductCard from "../components/ProductCard";
 import SearchBar from "../components/SearchBar";
-import { getProducts, type Product } from "../lib/products";
+import { getProducts, type Product, getFeaturedProducts } from "../lib/products";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -94,21 +95,37 @@ async function safeList(): Promise<Product[]> {
   }
 }
 
+/* --------- NEW: safe wrapper for featured from DB --------- */
+async function safeFeatured(limit = 8): Promise<Product[]> {
+  try {
+    const rows = await getFeaturedProducts(undefined, limit);
+    return Array.isArray(rows) ? rows : [];
+  } catch (e: any) {
+    console.error("[HomePage] getFeaturedProducts failed:", e?.message || e);
+    return [];
+  }
+}
+
 /* ---------------- Page ---------------- */
 
 export default async function HomePage() {
-  // Use the safe wrapper instead of calling getProducts() directly
+  // Use the safe wrappers instead of calling directly
   const all = await safeList();
 
-  const featured = pick(
-    all,
-    8,
-    undefined,
-    (a, b) =>
-      (isInStock(b) as any) - (isInStock(a) as any) ||
-      popularity(b) - popularity(a) ||
-      ts(b) - ts(a)
-  );
+  // Prefer explicit featured items from DB; if none exist, fall back to previous heuristic
+  const featuredFromDb = await safeFeatured(8);
+  const featured =
+    featuredFromDb.length > 0
+      ? featuredFromDb
+      : pick(
+          all,
+          8,
+          undefined,
+          (a, b) =>
+            (isInStock(b) as any) - (isInStock(a) as any) ||
+            popularity(b) - popularity(a) ||
+            ts(b) - ts(a)
+        );
 
   const onSale = pick(
     all,
@@ -187,7 +204,7 @@ export default async function HomePage() {
         />
       </section>
 
-      {/* Featured */}
+      {/* Featured — now driven by DB `featured` flag, keeps same layout */}
       <Section title="Featured" items={featured} href="/products" />
 
       {/* On Sale */}

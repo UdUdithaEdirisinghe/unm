@@ -17,6 +17,8 @@ export type Product = {
   createdAt?: string;
   /** NEW */
   warranty?: string | null;
+  /** NEW: Featured flag */
+  featured?: boolean;
 };
 
 export type CartItem = {
@@ -94,6 +96,8 @@ function rowToProduct(r: any): Product {
     createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
     /** NEW */
     warranty: r.warranty ?? null,
+    /** NEW */
+    featured: Boolean(r.featured),
   };
 }
 
@@ -102,7 +106,7 @@ function rowToProduct(r: any): Product {
 // Original: list all (kept for backward compatibility)
 export async function getProducts(): Promise<Product[]> {
   const rows = await sql`
-    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
+    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty, featured
     FROM products
     ORDER BY created_at DESC
   `;
@@ -112,7 +116,7 @@ export async function getProducts(): Promise<Product[]> {
 // New: filtered list for related section (safe dynamic pieces with template sql)
 export async function getProductsByCategory(category: string, excludeId?: string, limit?: number) {
   const rows = await sql`
-    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
+    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty, featured
     FROM products
     WHERE category = ${category}
     ${excludeId ? sql`AND id <> ${excludeId}` : sql``}
@@ -122,9 +126,22 @@ export async function getProductsByCategory(category: string, excludeId?: string
   return rows.map(rowToProduct);
 }
 
+/** NEW: featured-only list (random order for variety) */
+export async function getFeaturedProducts(excludeId?: string, limit?: number) {
+  const rows = await sql`
+    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty, featured
+    FROM products
+    WHERE featured = true
+    ${excludeId ? sql`AND id <> ${excludeId}` : sql``}
+    ORDER BY random()
+    ${limit && Number(limit) > 0 ? sql`LIMIT ${Number(limit)}` : sql``}
+  `;
+  return rows.map(rowToProduct);
+}
+
 export async function getProductBySlug(slug: string): Promise<Product | null> {
   const rows = await sql`
-    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
+    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty, featured
     FROM products
     WHERE slug = ${slug}
     LIMIT 1
@@ -141,7 +158,7 @@ export async function createProduct(p: Omit<Product, "id" | "createdAt" | "image
 
   const rows = await sql`
     INSERT INTO products
-      (id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, warranty)
+      (id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, warranty, featured)
     VALUES
       (
         ${id},
@@ -156,9 +173,10 @@ export async function createProduct(p: Omit<Product, "id" | "createdAt" | "image
         ${p.category ?? null},
         ${p.specs ? sql`${toJson(p.specs)}::jsonb` : null},
         ${p.stock ?? 0},
-        ${p.warranty ?? null}
+        ${p.warranty ?? null},
+        ${p.featured ?? false}
       )
-    RETURNING id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
+    RETURNING id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty, featured
   `;
   return rowToProduct(rows[0]);
 }
@@ -167,7 +185,7 @@ export async function createProduct(p: Omit<Product, "id" | "createdAt" | "image
 
 export async function updateProduct(id: string, patch: Partial<Product>) {
   const current = await sql`
-    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, warranty
+    SELECT id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, warranty, featured
     FROM products WHERE id = ${id} LIMIT 1
   `;
   if (!current[0]) return null;
@@ -189,6 +207,7 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
     stock: patch.stock === undefined ? prev.stock : Number(patch.stock),
     price: patch.price === undefined ? prev.price : Number(patch.price),
     warranty: patch.warranty === undefined ? prev.warranty : (patch.warranty ?? null),
+    featured: patch.featured === undefined ? prev.featured : Boolean(patch.featured),
   };
 
   const rows = await sql`
@@ -204,9 +223,10 @@ export async function updateProduct(id: string, patch: Partial<Product>) {
       category = ${next.category ?? null},
       specs = ${next.specs ? sql`${toJson(next.specs)}::jsonb` : null},
       stock = ${next.stock},
-      warranty = ${next.warranty ?? null}
+      warranty = ${next.warranty ?? null},
+      featured = ${next.featured ?? false}
     WHERE id = ${id}
-    RETURNING id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty
+    RETURNING id, name, slug, image, images, price, sale_price, short_desc, brand, category, specs, stock, created_at, warranty, featured
   `;
   return rows[0] ? rowToProduct(rows[0]) : null;
 }

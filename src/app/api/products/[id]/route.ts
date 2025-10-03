@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { updateProduct, deleteProduct, type Product } from "../../../../lib/products";
+import {
+  updateProduct,
+  deleteProduct,
+  type Product,
+} from "../../../../lib/products";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -30,6 +34,11 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     // Normalize warranty (string or null)
     if (patch.warranty !== undefined && patch.warranty !== null) {
       patch.warranty = String(patch.warranty);
+    }
+
+    // NEW: normalize featured if present
+    if (patch.featured !== undefined) {
+      patch.featured = Boolean(patch.featured);
     }
 
     const updated = await updateProduct(params.id, patch);

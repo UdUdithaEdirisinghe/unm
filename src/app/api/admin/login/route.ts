@@ -1,4 +1,3 @@
-// src/app/api/admin/login/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 
@@ -7,10 +6,10 @@ const CSRF_COOKIE = "manny_csrf";
 const COOKIE_DOMAIN = process.env.VERCEL ? ".manny.lk" : undefined;
 
 export async function POST(req: NextRequest) {
+  // --- CSRF: double-submit cookie check ---
   const headerTok = req.headers.get("x-csrf-token") || "";
   const cookieTok = req.cookies.get(CSRF_COOKIE)?.value || "";
 
-  // Guard lengths before timingSafeEqual (it throws if lengths differ)
   const sameLength = headerTok.length > 0 && headerTok.length === cookieTok.length;
   const timingSafeOk =
     sameLength &&
@@ -23,8 +22,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid CSRF token" }, { status: 403 });
   }
 
+  // --- Password check ---
   const { password } = await req.json();
-  const ok = password === process.env.ADMIN_PASSWORD;
+  // Trim the env var to avoid stray whitespace/newlines in .env
+  const envPwd = (process.env.ADMIN_PASSWORD ?? "").trim();
+
+  // Helpful server-side log if not configured
+  if (!envPwd) {
+    console.warn("[admin/login] ADMIN_PASSWORD is not set or empty.");
+  }
+
+  const ok = password === envPwd;
 
   const res = NextResponse.json({ ok }, { status: ok ? 200 : 401 });
 
